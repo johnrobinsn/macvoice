@@ -1,0 +1,43 @@
+{
+  "stack": "new",
+  "machine": "arm64",
+  "macos": "26.6",
+  "python": "3.12.15",
+  "footprint_mb": {
+    "start": 22.3,
+    "vad+turn": 74.0,
+    "+asr": 1237.7,
+    "+tts": 1268.3,
+    "after_asr": 1324.0,
+    "after_tts": 1398.9,
+    "end": 1405.2
+  },
+  "load_ms": {
+    "vad": 67.63649999629706,
+    "turn": 229.99125000205822,
+    "asr": 813.6717500019586,
+    "tts": 256.2494159938069
+  },
+  "asr": "parakeet-q8",
+  "tts": "phonon",
+  "vad_ms_per_chunk_p50": 0.06666650006081909,
+  "turn_ms_p50": 11.239896004553884,
+  "asr_ms_p50": 59.726688006776385,
+  "asr_ms_p95": 72.71347056012019,
+  "asr_wer": 0.0440251572327044,
+  "asr_audio_s": 67.8899375,
+  "asr_rtfx": 59.22905966283805,
+  "tts_first_audio_ms_p50": 3.696624989970587,
+  "tts_first_audio_ms_p95": 4.026477201841772,
+  "tts_rtf_p50": 0.033356087559306094,
+  "loop_policy": "smart-turn after 300 ms, max 3000 ms",
+  "loop_turns": 32,
+  "loop_endpoint_ms_p50": 298.7784374922631,
+  "loop_first_audio_ms_p50": 346.91052099468646,
+  "loop_first_audio_ms_p95": 350.97252399599535,
+  "loop_end_reasons": {
+    "detector": 32
+  },
+  "peak_footprint_mb": 1546.4861602783203,
+  "torch_loaded": false
+}

@@ -1,0 +1,147 @@
+{
+  "dataset": "librispeech validation-clean (hf-internal-testing/librispeech_asr_dummy)",
+  "license": "CC-BY-4.0 (LibriSpeech, Panayotov et al. 2015)",
+  "sample_rate_hz": 16000,
+  "clips": [
+    {
+      "id": "1272-128104-0001",
+      "wav": "1272-128104-0001.wav",
+      "duration_s": 4.815,
+      "speaker_id": 1272,
+      "transcript": "NOR IS MISTER QUILTER'S MANNER LESS INTERESTING THAN HIS MATTER"
+    },
+    {
+      "id": "1272-128104-0014",
+      "wav": "1272-128104-0014.wav",
+      "duration_s": 2.245,
+      "speaker_id": 1272,
+      "transcript": "BY HARRY QUILTER M A"
+    },
+    {
+      "id": "1272-135031-0003",
+      "wav": "1272-135031-0003.wav",
+      "duration_s": 4.755,
+      "speaker_id": 1272,
+      "transcript": "THE LITTLE GIRL HAD BEEN ASLEEP BUT SHE HEARD THE RAPS AND OPENED THE DOOR"
+    },
+    {
+      "id": "1272-135031-0004",
+      "wav": "1272-135031-0004.wav",
+      "duration_s": 4.225,
+      "speaker_id": 1272,
+      "transcript": "THE KING HAS FLED IN DISGRACE AND YOUR FRIENDS ARE ASKING FOR YOU"
+    },
+    {
+      "id": "1272-135031-0005",
+      "wav": "1272-135031-0005.wav",
+      "duration_s": 4.625,
+      "speaker_id": 1272,
+      "transcript": "I BEGGED RUGGEDO LONG AGO TO SEND HIM AWAY BUT HE WOULD NOT DO SO"
+    },
+    {
+      "id": "1272-135031-0006",
+      "wav": "1272-135031-0006.wav",
+      "duration_s": 4.09,
+      "speaker_id": 1272,
+      "transcript": "I ALSO OFFERED TO HELP YOUR BROTHER TO ESCAPE BUT HE WOULD NOT GO"
+    },
+    {
+      "id": "1272-135031-0007",
+      "wav": "1272-135031-0007.wav",
+      "duration_s": 4.055,
+      "speaker_id": 1272,
+      "transcript": "HE EATS AND SLEEPS VERY STEADILY REPLIED THE NEW KING"
+    },
+    {
+      "id": "1272-135031-0008",
+      "wav": "1272-135031-0008.wav",
+      "duration_s": 3.67,
+      "speaker_id": 1272,
+      "transcript": "I HOPE HE DOESN'T WORK TOO HARD SAID SHAGGY"
+    },
+    {
+      "id": "1272-135031-0009",
+      "wav": "1272-135031-0009.wav",
+      "duration_s": 1.91,
+      "speaker_id": 1272,
+      "transcript": "HE DOESN'T WORK AT ALL"
+    },
+    {
+      "id": "1272-135031-0011",
+      "wav": "1272-135031-0011.wav",
+      "duration_s": 3.18,
+      "speaker_id": 1272,
+      "transcript": "NOT EXACTLY RETURNED KALIKO"
+    },
+    {
+      "id": "1272-135031-0012",
+      "wav": "1272-135031-0012.wav",
+      "duration_s": 2.04,
+      "speaker_id": 1272,
+      "transcript": "WHERE IS MY BROTHER NOW"
+    },
+    {
+      "id": "1272-135031-0013",
+      "wav": "1272-135031-0013.wav",
+      "duration_s": 3.7,
+      "speaker_id": 1272,
+      "transcript": "INQUIRED SHAGGY IN THE METAL FOREST"
+    },
+    {
+      "id": "1272-135031-0014",
+      "wav": "1272-135031-0014.wav",
+      "duration_s": 1.74,
+      "speaker_id": 1272,
+      "transcript": "WHERE IS THAT"
+    },
+    {
+      "id": "1272-135031-0016",
+      "wav": "1272-135031-0016.wav",
+      "duration_s": 2.28,
+      "speaker_id": 1272,
+      "transcript": "KALIKO HESITATED"
+    },
+    {
+      "id": "1272-135031-0018",
+      "wav": "1272-135031-0018.wav",
+      "duration_s": 2.445,
+      "speaker_id": 1272,
+      "transcript": "OH NO I'M QUITE SURE HE DIDN'T"
+    },
+    {
+      "id": "1272-135031-0019",
+      "wav": "1272-135031-0019.wav",
+      "duration_s": 3.525,
+      "speaker_id": 1272,
+      "transcript": "THAT'S FUNNY REMARKED BETSY THOUGHTFULLY"
+    },
+    {
+      "id": "1272-135031-0020",
+      "wav": "1272-135031-0020.wav",
+      "duration_s": 4.65,
+      "speaker_id": 1272,
+      "transcript": "I DON'T BELIEVE ANN KNEW ANY MAGIC OR SHE'D HAVE WORKED IT BEFORE"
+    },
+    {
+      "id": "1272-135031-0021",
+      "wav": "1272-135031-0021.wav",
+      "duration_s": 2.595,
+      "speaker_id": 1272,
+      "transcript": "I DO NOT KNOW CONFESSED SHAGGY"
+    },
+    {
+      "id": "1272-135031-0022",
+      "wav": "1272-135031-0022.wav",
+      "duration_s": 2.695,
+      "speaker_id": 1272,
+      "transcript": "TRUE AGREED KALIKO"
+    },
+    {
+      "id": "1272-141231-0000",
+      "wav": "1272-141231-0000.wav",
+      "duration_s": 4.65,
+      "speaker_id": 1272,
+      "transcript": "A MAN SAID TO THE UNIVERSE SIR I EXIST"
+    }
+  ]
+}

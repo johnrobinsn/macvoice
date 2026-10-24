@@ -1,0 +1,70 @@
+{
+  "voices": [
+    "default",
+    "harper",
+    "hadley",
+    "juniper"
+  ],
+  "items": 8,
+  "pauses_s": [
+    1.0,
+    2.0
+  ],
+  "complete_samples": 32,
+  "policies": {
+    "fixed 500 ms": {
+      "complete_endpoint_ms_p50": 512.0,
+      "complete_endpoint_ms_p90": 512.0000000000002,
+      "complete_split_rate": 0.0,
+      "cut_off_filler_1s": 1.0,
+      "cut_off_filler_2s": 1.0,
+      "cut_off_bare_1s": 1.0,
+      "cut_off_bare_2s": 1.0
+    },
+    "fixed 1000 ms": {
+      "complete_endpoint_ms_p50": 992.0,
+      "complete_endpoint_ms_p90": 992.0000000000002,
+      "complete_split_rate": 0.0,
+      "cut_off_filler_1s": 1.0,
+      "cut_off_filler_2s": 1.0,
+      "cut_off_bare_1s": 1.0,
+      "cut_off_bare_2s": 1.0
+    },
+    "fixed 1500 ms": {
+      "complete_endpoint_ms_p50": 1504.0,
+      "complete_endpoint_ms_p90": 1504.0000000000002,
+      "complete_split_rate": 0.0,
+      "cut_off_filler_1s": 0.0,
+      "cut_off_filler_2s": 1.0,
+      "cut_off_bare_1s": 0.0,
+      "cut_off_bare_2s": 1.0
+    },
+    "smart-turn after 200 ms, max 2000 ms": {
+      "complete_endpoint_ms_p50": 191.99999999999994,
+      "complete_endpoint_ms_p90": 192.00000000000017,
+      "complete_split_rate": 0.0,
+      "cut_off_filler_1s": 0.0625,
+      "cut_off_filler_2s": 1.0,
+      "cut_off_bare_1s": 0.875,
+      "cut_off_bare_2s": 1.0
+    },
+    "smart-turn after 300 ms, max 2000 ms": {
+      "complete_endpoint_ms_p50": 288.00000000000006,
+      "complete_endpoint_ms_p90": 288.0000000000002,
+      "complete_split_rate": 0.0,
+      "cut_off_filler_1s": 0.0,
+      "cut_off_filler_2s": 1.0,
+      "cut_off_bare_1s": 0.875,
+      "cut_off_bare_2s": 1.0
+    },
+    "smart-turn after 300 ms, max 3000 ms (default)": {
+      "complete_endpoint_ms_p50": 288.00000000000006,
+      "complete_endpoint_ms_p90": 288.0000000000002,
+      "complete_split_rate": 0.0,
+      "cut_off_filler_1s": 0.0,
+      "cut_off_filler_2s": 0.0,
+      "cut_off_bare_1s": 0.875,
+      "cut_off_bare_2s": 0.875
+    }
+  }
+}

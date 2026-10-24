@@ -1,0 +1,50 @@
+[project]
+name = "macvoice"
+version = "0.1.0"
+description = "A local voice agent loop for Apple Silicon in under 2 GB: Silero VAD, Parakeet (MLX), Smart Turn, Phonon. No PyTorch."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "onnxruntime>=1.18",
+    "huggingface-hub>=0.24",
+    "mlx>=0.25; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "parakeet-mlx>=0.5; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "ptts>=0.4",
+    "sounddevice>=0.4.7",
+]
+
+[project.optional-dependencies]
+# The "before" stack the article compares against: Whisper large-v3 on
+# PyTorch-MPS (with distil-large-v3 speculative decoding) and Kokoro.
+baseline = [
+    "torch>=2.4",
+    "transformers>=4.45,<5",
+    "kokoro>=0.9",
+    # misaki (Kokoro's G2P) needs this spaCy model and otherwise tries to pip-install it.
+    "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
+]
+
+[project.scripts]
+macvoice = "macvoice.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/macvoice"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "models: loads real models (cached Hugging Face downloads, Apple Silicon)",
+    "baseline: needs the optional PyTorch baseline extra",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true

@@ -1,0 +1,678 @@
+{
+  "source": "Phonon 31M English (gradium/phonon-31m-en, Apache-2.0) via ptts",
+  "sample_rate_hz": 16000,
+  "clips": [
+    {
+      "wav": "default_0_complete.wav",
+      "voice": "default",
+      "item": 0,
+      "kind": "complete",
+      "text": "What's the weather going to be like tomorrow?"
+    },
+    {
+      "wav": "default_0_head.wav",
+      "voice": "default",
+      "item": 0,
+      "kind": "head",
+      "text": "I'd like to book a table for, um,"
+    },
+    {
+      "wav": "default_0_tail.wav",
+      "voice": "default",
+      "item": 0,
+      "kind": "tail",
+      "text": "four people at seven."
+    },
+    {
+      "wav": "default_1_complete.wav",
+      "voice": "default",
+      "item": 1,
+      "kind": "complete",
+      "text": "Set a timer for ten minutes."
+    },
+    {
+      "wav": "default_1_head.wav",
+      "voice": "default",
+      "item": 1,
+      "kind": "head",
+      "text": "Can you remind me to call"
+    },
+    {
+      "wav": "default_1_tail.wav",
+      "voice": "default",
+      "item": 1,
+      "kind": "tail",
+      "text": "my sister on Sunday?"
+    },
+    {
+      "wav": "default_2_complete.wav",
+      "voice": "default",
+      "item": 2,
+      "kind": "complete",
+      "text": "How many days are in a leap year?"
+    },
+    {
+      "wav": "default_2_head.wav",
+      "voice": "default",
+      "item": 2,
+      "kind": "head",
+      "text": "The thing I keep forgetting is, uh,"
+    },
+    {
+      "wav": "default_2_tail.wav",
+      "voice": "default",
+      "item": 2,
+      "kind": "tail",
+      "text": "where I parked the car."
+    },
+    {
+      "wav": "default_3_complete.wav",
+      "voice": "default",
+      "item": 3,
+      "kind": "complete",
+      "text": "Turn off the lights in the kitchen."
+    },
+    {
+      "wav": "default_3_head.wav",
+      "voice": "default",
+      "item": 3,
+      "kind": "head",
+      "text": "Send a message to Alex saying that"
+    },
+    {
+      "wav": "default_3_tail.wav",
+      "voice": "default",
+      "item": 3,
+      "kind": "tail",
+      "text": "I'll be ten minutes late."
+    },
+    {
+      "wav": "default_4_complete.wav",
+      "voice": "default",
+      "item": 4,
+      "kind": "complete",
+      "text": "What time is it in Tokyo right now?"
+    },
+    {
+      "wav": "default_4_head.wav",
+      "voice": "default",
+      "item": 4,
+      "kind": "head",
+      "text": "I need you to find the file with the, um,"
+    },
+    {
+      "wav": "default_4_tail.wav",
+      "voice": "default",
+      "item": 4,
+      "kind": "tail",
+      "text": "quarterly budget numbers."
+    },
+    {
+      "wav": "default_5_complete.wav",
+      "voice": "default",
+      "item": 5,
+      "kind": "complete",
+      "text": "Play some relaxing music."
+    },
+    {
+      "wav": "default_5_head.wav",
+      "voice": "default",
+      "item": 5,
+      "kind": "head",
+      "text": "What's the best way to get to"
+    },
+    {
+      "wav": "default_5_tail.wav",
+      "voice": "default",
+      "item": 5,
+      "kind": "tail",
+      "text": "the airport from here?"
+    },
+    {
+      "wav": "default_6_complete.wav",
+      "voice": "default",
+      "item": 6,
+      "kind": "complete",
+      "text": "Who wrote Pride and Prejudice?"
+    },
+    {
+      "wav": "default_6_head.wav",
+      "voice": "default",
+      "item": 6,
+      "kind": "head",
+      "text": "So my question is, hmm,"
+    },
+    {
+      "wav": "default_6_tail.wav",
+      "voice": "default",
+      "item": 6,
+      "kind": "tail",
+      "text": "how long should I boil an egg?"
+    },
+    {
+      "wav": "default_7_complete.wav",
+      "voice": "default",
+      "item": 7,
+      "kind": "complete",
+      "text": "Add milk to my shopping list."
+    },
+    {
+      "wav": "default_7_head.wav",
+      "voice": "default",
+      "item": 7,
+      "kind": "head",
+      "text": "Could you explain why the sky is blue and"
+    },
+    {
+      "wav": "default_7_tail.wav",
+      "voice": "default",
+      "item": 7,
+      "kind": "tail",
+      "text": "why sunsets are red?"
+    },
+    {
+      "wav": "harper_0_complete.wav",
+      "voice": "harper",
+      "item": 0,
+      "kind": "complete",
+      "text": "What's the weather going to be like tomorrow?"
+    },
+    {
+      "wav": "harper_0_head.wav",
+      "voice": "harper",
+      "item": 0,
+      "kind": "head",
+      "text": "I'd like to book a table for, um,"
+    },
+    {
+      "wav": "harper_0_tail.wav",
+      "voice": "harper",
+      "item": 0,
+      "kind": "tail",
+      "text": "four people at seven."
+    },
+    {
+      "wav": "harper_1_complete.wav",
+      "voice": "harper",
+      "item": 1,
+      "kind": "complete",
+      "text": "Set a timer for ten minutes."
+    },
+    {
+      "wav": "harper_1_head.wav",
+      "voice": "harper",
+      "item": 1,
+      "kind": "head",
+      "text": "Can you remind me to call"
+    },
+    {
+      "wav": "harper_1_tail.wav",
+      "voice": "harper",
+      "item": 1,
+      "kind": "tail",
+      "text": "my sister on Sunday?"
+    },
+    {
+      "wav": "harper_2_complete.wav",
+      "voice": "harper",
+      "item": 2,
+      "kind": "complete",
+      "text": "How many days are in a leap year?"
+    },
+    {
+      "wav": "harper_2_head.wav",
+      "voice": "harper",
+      "item": 2,
+      "kind": "head",
+      "text": "The thing I keep forgetting is, uh,"
+    },
+    {
+      "wav": "harper_2_tail.wav",
+      "voice": "harper",
+      "item": 2,
+      "kind": "tail",
+      "text": "where I parked the car."
+    },
+    {
+      "wav": "harper_3_complete.wav",
+      "voice": "harper",
+      "item": 3,
+      "kind": "complete",
+      "text": "Turn off the lights in the kitchen."
+    },
+    {
+      "wav": "harper_3_head.wav",
+      "voice": "harper",
+      "item": 3,
+      "kind": "head",
+      "text": "Send a message to Alex saying that"
+    },
+    {
+      "wav": "harper_3_tail.wav",
+      "voice": "harper",
+      "item": 3,
+      "kind": "tail",
+      "text": "I'll be ten minutes late."
+    },
+    {
+      "wav": "harper_4_complete.wav",
+      "voice": "harper",
+      "item": 4,
+      "kind": "complete",
+      "text": "What time is it in Tokyo right now?"
+    },
+    {
+      "wav": "harper_4_head.wav",
+      "voice": "harper",
+      "item": 4,
+      "kind": "head",
+      "text": "I need you to find the file with the, um,"
+    },
+    {
+      "wav": "harper_4_tail.wav",
+      "voice": "harper",
+      "item": 4,
+      "kind": "tail",
+      "text": "quarterly budget numbers."
+    },
+    {
+      "wav": "harper_5_complete.wav",
+      "voice": "harper",
+      "item": 5,
+      "kind": "complete",
+      "text": "Play some relaxing music."
+    },
+    {
+      "wav": "harper_5_head.wav",
+      "voice": "harper",
+      "item": 5,
+      "kind": "head",
+      "text": "What's the best way to get to"
+    },
+    {
+      "wav": "harper_5_tail.wav",
+      "voice": "harper",
+      "item": 5,
+      "kind": "tail",
+      "text": "the airport from here?"
+    },
+    {
+      "wav": "harper_6_complete.wav",
+      "voice": "harper",
+      "item": 6,
+      "kind": "complete",
+      "text": "Who wrote Pride and Prejudice?"
+    },
+    {
+      "wav": "harper_6_head.wav",
+      "voice": "harper",
+      "item": 6,
+      "kind": "head",
+      "text": "So my question is, hmm,"
+    },
+    {
+      "wav": "harper_6_tail.wav",
+      "voice": "harper",
+      "item": 6,
+      "kind": "tail",
+      "text": "how long should I boil an egg?"
+    },
+    {
+      "wav": "harper_7_complete.wav",
+      "voice": "harper",
+      "item": 7,
+      "kind": "complete",
+      "text": "Add milk to my shopping list."
+    },
+    {
+      "wav": "harper_7_head.wav",
+      "voice": "harper",
+      "item": 7,
+      "kind": "head",
+      "text": "Could you explain why the sky is blue and"
+    },
+    {
+      "wav": "harper_7_tail.wav",
+      "voice": "harper",
+      "item": 7,
+      "kind": "tail",
+      "text": "why sunsets are red?"
+    },
+    {
+      "wav": "hadley_0_complete.wav",
+      "voice": "hadley",
+      "item": 0,
+      "kind": "complete",
+      "text": "What's the weather going to be like tomorrow?"
+    },
+    {
+      "wav": "hadley_0_head.wav",
+      "voice": "hadley",
+      "item": 0,
+      "kind": "head",
+      "text": "I'd like to book a table for, um,"
+    },
+    {
+      "wav": "hadley_0_tail.wav",
+      "voice": "hadley",
+      "item": 0,
+      "kind": "tail",
+      "text": "four people at seven."
+    },
+    {
+      "wav": "hadley_1_complete.wav",
+      "voice": "hadley",
+      "item": 1,
+      "kind": "complete",
+      "text": "Set a timer for ten minutes."
+    },
+    {
+      "wav": "hadley_1_head.wav",
+      "voice": "hadley",
+      "item": 1,
+      "kind": "head",
+      "text": "Can you remind me to call"
+    },
+    {
+      "wav": "hadley_1_tail.wav",
+      "voice": "hadley",
+      "item": 1,
+      "kind": "tail",
+      "text": "my sister on Sunday?"
+    },
+    {
+      "wav": "hadley_2_complete.wav",
+      "voice": "hadley",
+      "item": 2,
+      "kind": "complete",
+      "text": "How many days are in a leap year?"
+    },
+    {
+      "wav": "hadley_2_head.wav",
+      "voice": "hadley",
+      "item": 2,
+      "kind": "head",
+      "text": "The thing I keep forgetting is, uh,"
+    },
+    {
+      "wav": "hadley_2_tail.wav",
+      "voice": "hadley",
+      "item": 2,
+      "kind": "tail",
+      "text": "where I parked the car."
+    },
+    {
+      "wav": "hadley_3_complete.wav",
+      "voice": "hadley",
+      "item": 3,
+      "kind": "complete",
+      "text": "Turn off the lights in the kitchen."
+    },
+    {
+      "wav": "hadley_3_head.wav",
+      "voice": "hadley",
+      "item": 3,
+      "kind": "head",
+      "text": "Send a message to Alex saying that"
+    },
+    {
+      "wav": "hadley_3_tail.wav",
+      "voice": "hadley",
+      "item": 3,
+      "kind": "tail",
+      "text": "I'll be ten minutes late."
+    },
+    {
+      "wav": "hadley_4_complete.wav",
+      "voice": "hadley",
+      "item": 4,
+      "kind": "complete",
+      "text": "What time is it in Tokyo right now?"
+    },
+    {
+      "wav": "hadley_4_head.wav",
+      "voice": "hadley",
+      "item": 4,
+      "kind": "head",
+      "text": "I need you to find the file with the, um,"
+    },
+    {
+      "wav": "hadley_4_tail.wav",
+      "voice": "hadley",
+      "item": 4,
+      "kind": "tail",
+      "text": "quarterly budget numbers."
+    },
+    {
+      "wav": "hadley_5_complete.wav",
+      "voice": "hadley",
+      "item": 5,
+      "kind": "complete",
+      "text": "Play some relaxing music."
+    },
+    {
+      "wav": "hadley_5_head.wav",
+      "voice": "hadley",
+      "item": 5,
+      "kind": "head",
+      "text": "What's the best way to get to"
+    },
+    {
+      "wav": "hadley_5_tail.wav",
+      "voice": "hadley",
+      "item": 5,
+      "kind": "tail",
+      "text": "the airport from here?"
+    },
+    {
+      "wav": "hadley_6_complete.wav",
+      "voice": "hadley",
+      "item": 6,
+      "kind": "complete",
+      "text": "Who wrote Pride and Prejudice?"
+    },
+    {
+      "wav": "hadley_6_head.wav",
+      "voice": "hadley",
+      "item": 6,
+      "kind": "head",
+      "text": "So my question is, hmm,"
+    },
+    {
+      "wav": "hadley_6_tail.wav",
+      "voice": "hadley",
+      "item": 6,
+      "kind": "tail",
+      "text": "how long should I boil an egg?"
+    },
+    {
+      "wav": "hadley_7_complete.wav",
+      "voice": "hadley",
+      "item": 7,
+      "kind": "complete",
+      "text": "Add milk to my shopping list."
+    },
+    {
+      "wav": "hadley_7_head.wav",
+      "voice": "hadley",
+      "item": 7,
+      "kind": "head",
+      "text": "Could you explain why the sky is blue and"
+    },
+    {
+      "wav": "hadley_7_tail.wav",
+      "voice": "hadley",
+      "item": 7,
+      "kind": "tail",
+      "text": "why sunsets are red?"
+    },
+    {
+      "wav": "juniper_0_complete.wav",
+      "voice": "juniper",
+      "item": 0,
+      "kind": "complete",
+      "text": "What's the weather going to be like tomorrow?"
+    },
+    {
+      "wav": "juniper_0_head.wav",
+      "voice": "juniper",
+      "item": 0,
+      "kind": "head",
+      "text": "I'd like to book a table for, um,"
+    },
+    {
+      "wav": "juniper_0_tail.wav",
+      "voice": "juniper",
+      "item": 0,
+      "kind": "tail",
+      "text": "four people at seven."
+    },
+    {
+      "wav": "juniper_1_complete.wav",
+      "voice": "juniper",
+      "item": 1,
+      "kind": "complete",
+      "text": "Set a timer for ten minutes."
+    },
+    {
+      "wav": "juniper_1_head.wav",
+      "voice": "juniper",
+      "item": 1,
+      "kind": "head",
+      "text": "Can you remind me to call"
+    },
+    {
+      "wav": "juniper_1_tail.wav",
+      "voice": "juniper",
+      "item": 1,
+      "kind": "tail",
+      "text": "my sister on Sunday?"
+    },
+    {
+      "wav": "juniper_2_complete.wav",
+      "voice": "juniper",
+      "item": 2,
+      "kind": "complete",
+      "text": "How many days are in a leap year?"
+    },
+    {
+      "wav": "juniper_2_head.wav",
+      "voice": "juniper",
+      "item": 2,
+      "kind": "head",
+      "text": "The thing I keep forgetting is, uh,"
+    },
+    {
+      "wav": "juniper_2_tail.wav",
+      "voice": "juniper",
+      "item": 2,
+      "kind": "tail",
+      "text": "where I parked the car."
+    },
+    {
+      "wav": "juniper_3_complete.wav",
+      "voice": "juniper",
+      "item": 3,
+      "kind": "complete",
+      "text": "Turn off the lights in the kitchen."
+    },
+    {
+      "wav": "juniper_3_head.wav",
+      "voice": "juniper",
+      "item": 3,
+      "kind": "head",
+      "text": "Send a message to Alex saying that"
+    },
+    {
+      "wav": "juniper_3_tail.wav",
+      "voice": "juniper",
+      "item": 3,
+      "kind": "tail",
+      "text": "I'll be ten minutes late."
+    },
+    {
+      "wav": "juniper_4_complete.wav",
+      "voice": "juniper",
+      "item": 4,
+      "kind": "complete",
+      "text": "What time is it in Tokyo right now?"
+    },
+    {
+      "wav": "juniper_4_head.wav",
+      "voice": "juniper",
+      "item": 4,
+      "kind": "head",
+      "text": "I need you to find the file with the, um,"
+    },
+    {
+      "wav": "juniper_4_tail.wav",
+      "voice": "juniper",
+      "item": 4,
+      "kind": "tail",
+      "text": "quarterly budget numbers."
+    },
+    {
+      "wav": "juniper_5_complete.wav",
+      "voice": "juniper",
+      "item": 5,
+      "kind": "complete",
+      "text": "Play some relaxing music."
+    },
+    {
+      "wav": "juniper_5_head.wav",
+      "voice": "juniper",
+      "item": 5,
+      "kind": "head",
+      "text": "What's the best way to get to"
+    },
+    {
+      "wav": "juniper_5_tail.wav",
+      "voice": "juniper",
+      "item": 5,
+      "kind": "tail",
+      "text": "the airport from here?"
+    },
+    {
+      "wav": "juniper_6_complete.wav",
+      "voice": "juniper",
+      "item": 6,
+      "kind": "complete",
+      "text": "Who wrote Pride and Prejudice?"
+    },
+    {
+      "wav": "juniper_6_head.wav",
+      "voice": "juniper",
+      "item": 6,
+      "kind": "head",
+      "text": "So my question is, hmm,"
+    },
+    {
+      "wav": "juniper_6_tail.wav",
+      "voice": "juniper",
+      "item": 6,
+      "kind": "tail",
+      "text": "how long should I boil an egg?"
+    },
+    {
+      "wav": "juniper_7_complete.wav",
+      "voice": "juniper",
+      "item": 7,
+      "kind": "complete",
+      "text": "Add milk to my shopping list."
+    },
+    {
+      "wav": "juniper_7_head.wav",
+      "voice": "juniper",
+      "item": 7,
+      "kind": "head",
+      "text": "Could you explain why the sky is blue and"
+    },
+    {
+      "wav": "juniper_7_tail.wav",
+      "voice": "juniper",
+      "item": 7,
+      "kind": "tail",
+      "text": "why sunsets are red?"
+    }
+  ]
+}

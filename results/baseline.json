@@ -1,0 +1,41 @@
+{
+  "stack": "baseline",
+  "machine": "arm64",
+  "macos": "26.6",
+  "python": "3.12.15",
+  "footprint_mb": {
+    "start": 22.5,
+    "vad+turn": 49.3,
+    "+asr": 4525.1,
+    "+tts": 5365.9,
+    "after_asr": 5484.5,
+    "after_tts": 5897.7,
+    "end": 6113.9
+  },
+  "load_ms": {
+    "vad": 66.96279199968558,
+    "asr": 3541.8684169999324,
+    "tts": 1732.6406659994973
+  },
+  "asr": "whisper-large-v3",
+  "tts": "kokoro",
+  "vad_ms_per_chunk_p50": 0.0667295025778003,
+  "asr_ms_p50": 404.3266459921142,
+  "asr_ms_p95": 475.1830610584874,
+  "asr_wer": 0.0440251572327044,
+  "asr_audio_s": 67.8899375,
+  "asr_rtfx": 8.27552647934528,
+  "tts_first_audio_ms_p50": 211.9814585093991,
+  "tts_first_audio_ms_p95": 296.61775450585986,
+  "tts_rtf_p50": 0.06711424193977347,
+  "loop_policy": "fixed 1500 ms silence",
+  "loop_turns": 32,
+  "loop_endpoint_ms_p50": 1504.0113954956762,
+  "loop_first_audio_ms_p50": 2027.454333502741,
+  "loop_first_audio_ms_p95": 2092.630806157744,
+  "loop_end_reasons": {
+    "silence": 32
+  },
+  "peak_footprint_mb": 6113.861892700195,
+  "torch_loaded": true
+}
