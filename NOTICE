@@ -1,0 +1,19 @@
+macvoice
+Copyright 2026 John Robinson. Licensed under the Apache License 2.0 (LICENSE).
+
+Models downloaded at runtime (not redistributed here):
+
+- Silero VAD v6.2.3 (snakers4/silero-vad) - MIT
+- Smart Turn v3.2 (pipecat-ai/smart-turn-v3) - BSD-2-Clause
+- Parakeet TDT 0.6B v2 (nvidia/parakeet-tdt-0.6b-v2; MLX weights mlx-community/parakeet-tdt-0.6b-v2) - CC-BY-4.0
+- Phonon 31M English and voice catalog (gradium/phonon-31m-en, gradium/phonon-voices) - Apache-2.0
+
+Optional baseline (the "baseline" extra): Whisper large-v3 and distil-large-v3 (MIT), Kokoro-82M (Apache-2.0).
+
+Test data in tests/fixtures/:
+
+- librispeech/: 20 utterances from LibriSpeech validation-clean (Panayotov et al., 2015), CC-BY-4.0.
+- prompts/: speech synthesized with Phonon 31M English (Apache-2.0) by scripts/make_prompt_fixtures.py.
+- reference_*.npz: outputs of transformers' WhisperFeatureExtractor and silero-vad's PyTorch model on a LibriSpeech clip, used to pin the NumPy ports.
+
+Parts of the code are adapted from vibr8 (Apache-2.0, same author).

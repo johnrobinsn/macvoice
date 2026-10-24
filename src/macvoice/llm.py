@@ -1,4 +1,5 @@
-"""The agent's brain: any OpenAI-compatible chat endpoint, streamed.
+"""The agent's brain: any OpenAI-compatible chat endpoint, streamed, or a
+coding agent over ACP (:mod:`macvoice.acp`).
 
 Works with local servers (``mlx_lm.server``, Ollama, LM Studio, llama.cpp)
 and hosted APIs that speak the same protocol. Standard library only.
@@ -39,15 +40,17 @@ class Echo:
 
 
 class OpenAICompatible:
-    def __init__(self, base_url: str = "http://localhost:8080/v1", model: str = "default",
+    def __init__(self, base_url: str = "http://localhost:8080/v1", model: str | None = None,
                  api_key: str | None = None, timeout: float = 120.0) -> None:
         self.base_url = base_url.rstrip("/")
         self.model, self.api_key, self.timeout = model, api_key, timeout
-        self.name = f"openai:{model}"
+        self.name = f"openai:{model or base_url}"
 
     def reply(self, history: list[dict]) -> Iterator[str]:
-        body = json.dumps({"model": self.model, "stream": True,
-                           "messages": [{"role": "system", "content": SYSTEM_PROMPT}, *history]})
+        payload = {"stream": True, "messages": [{"role": "system", "content": SYSTEM_PROMPT}, *history]}
+        if self.model:  # local servers use the model they loaded when it's omitted
+            payload["model"] = self.model
+        body = json.dumps(payload)
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -103,10 +106,16 @@ def sentences(tokens: Iterable[str], min_chars: int = 12) -> Iterator[str]:
 
 
 def load(name: str = "echo", base_url: str | None = None, model: str | None = None,
-         api_key: str | None = None) -> LLM:
+         api_key: str | None = None, acp_command: str | None = None,
+         allow_tools: bool = False) -> LLM:
     if name == "echo":
         return Echo()
+    if name == "acp":
+        import shlex
+
+        from macvoice.acp import ACPAgent
+        return ACPAgent(shlex.split(acp_command) if acp_command else None, allow_tools=allow_tools)
     if name == "openai":
         return OpenAICompatible(base_url=base_url or "http://localhost:8080/v1",
-                                model=model or "default", api_key=api_key)
-    raise ValueError(f"unknown LLM {name!r} (echo | openai)")
+                                model=model, api_key=api_key)
+    raise ValueError(f"unknown LLM {name!r} (echo | openai | acp)")

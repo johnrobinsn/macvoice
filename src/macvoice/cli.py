@@ -17,11 +17,17 @@ def _add_model_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--precision", default="q8", help="Parakeet precision: bf16 fp16 q8 q6 q4")
     p.add_argument("--tts", default="phonon", choices=["phonon", "kokoro"])
     p.add_argument("--voice", default=None, help="TTS voice (Phonon catalog name, e.g. Harper)")
-    p.add_argument("--llm", default="echo", choices=["echo", "openai"])
+    p.add_argument("--llm", default="echo", choices=["echo", "openai", "acp"],
+                   help="echo: repeat what you said; openai: any OpenAI-compatible server; "
+                        "acp: a coding agent over ACP (default command claude-agent-acp)")
     p.add_argument("--base-url", default=None, help="OpenAI-compatible base URL "
                    "(default http://localhost:8080/v1, mlx_lm.server)")
     p.add_argument("--model", default=None)
     p.add_argument("--api-key", default=None)
+    p.add_argument("--acp-command", default=None,
+                   help='ACP agent command line, e.g. "gemini --experimental-acp" (default claude-agent-acp)')
+    p.add_argument("--allow-tools", action="store_true",
+                   help="let the ACP agent run tools it asks permission for (declined by default)")
     p.add_argument("--no-turn-detector", action="store_true",
                    help="end turns on silence alone (--max-silence-ms)")
     p.add_argument("--max-silence-ms", type=float, default=None,
@@ -43,7 +49,8 @@ def _build(args, need_tts: bool = True):
     max_silence = args.max_silence_ms or (1500 if detector is None else 3000)
     endpointer = Endpointer(detector, EndpointConfig(max_silence_ms=max_silence, threshold=args.threshold))
     responder = Responder(asr.load(args.asr, args.precision),
-                          llm.load(args.llm, args.base_url, args.model, args.api_key),
+                          llm.load(args.llm, args.base_url, args.model, args.api_key,
+                                   args.acp_command, args.allow_tools),
                           tts.load(args.tts, args.voice) if need_tts else None)
     logging.getLogger("macvoice").info("models loaded in %.1f s", time.perf_counter() - t0)
     return vad, endpointer, responder
@@ -76,7 +83,7 @@ def cmd_run(args) -> None:
     print(f"ready: footprint {fp:.0f} MB, torch loaded: {torch_loaded()}"
           + ("" if args.barge_in else "  (half duplex: the mic is muted while I talk)"))
     agent = VoiceAgent(vad, endpointer, responder, out, barge_in=args.barge_in, on_turn=_print_turn)
-    agent.run(input_device=args.input_device)
+    agent.run(input_device=args.input_device, max_turns=args.turns)
 
 
 def cmd_simulate(args) -> None:
@@ -138,6 +145,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--barge-in", action="store_true", help="interrupt replies by talking (use headphones)")
     p.add_argument("--input-device", default=None)
     p.add_argument("--output-device", default=None)
+    p.add_argument("--turns", type=int, default=None, help="exit after this many replies")
     p.set_defaults(fn=cmd_run)
 
     p = sub.add_parser("simulate", help="run a WAV recording through the loop, no devices")

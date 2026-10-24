@@ -176,9 +176,24 @@ class VoiceAgent:
         self._turns.put(None)
         self._worker.join(timeout=5)
 
-    def run(self, input_device=None, output_device=None) -> None:  # pragma: no cover - devices
-        """Blocking: microphone in, speaker out, until Ctrl-C."""
+    def run(self, input_device=None, max_turns: int | None = None) -> None:  # pragma: no cover - devices
+        """Blocking: microphone in until Ctrl-C, or until ``max_turns``
+        replies have been spoken."""
         import sounddevice as sd
+
+        replies = 0
+        finished = threading.Event()
+        on_turn = self.on_turn
+
+        def count(m: TurnMetrics) -> None:
+            nonlocal replies
+            if on_turn:
+                on_turn(m)
+            replies += 1
+            if max_turns and replies >= max_turns:
+                finished.set()
+
+        self.on_turn = count
 
         chunks: queue.Queue[np.ndarray] = queue.Queue()
 
@@ -189,8 +204,13 @@ class VoiceAgent:
                             device=input_device, callback=on_audio):
             log.info("listening (Ctrl-C to quit)")
             try:
-                while True:
-                    self.feed(chunks.get())
+                while not finished.is_set():
+                    try:
+                        self.feed(chunks.get(timeout=0.5))
+                    except queue.Empty:
+                        pass
+                while self.out.busy:  # let the last reply finish playing
+                    time.sleep(0.05)
             except KeyboardInterrupt:
                 pass
             finally:

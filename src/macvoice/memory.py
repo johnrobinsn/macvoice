@@ -1,7 +1,7 @@
 """Memory measurement that counts GPU memory on Apple Silicon.
 
-``ru_maxrss`` and Activity Monitor's "Memory" miss most Metal allocations
-on unified memory. The kernel's *physical footprint* counts them, so it is
+``ru_maxrss`` (and RSS in general) misses most Metal allocations on
+unified memory. The kernel's *physical footprint* counts them, so it is
 the number that compares fairly across PyTorch-MPS, MLX and Rust/Metal
 runtimes in one process.
 """

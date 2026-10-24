@@ -94,3 +94,4 @@ def test_openai_compatible_without_key_sends_no_auth(server):
     url, seen = server
     list(OpenAICompatible(base_url=url).reply([{"role": "user", "content": "x"}]))
     assert seen["auth"] is None
+    assert "model" not in seen["body"]                       # the server's loaded model
