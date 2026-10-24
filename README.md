@@ -31,6 +31,8 @@ uv run macvoice run --aec            # with echo cancellation: talk over it to i
 
 At startup it prints which brain it's using. By default that's the LLM server on `localhost:8080` if one is running; otherwise an "echo" brain that repeats what you say, so you can try the audio loop with no LLM at all.
 
+**New to running a local LLM?** [docs/llm-setup.md](docs/llm-setup.md) walks through it step by step (Qwen3-4B on MLX, about 2 minutes plus a 2.1 GB download), along with Ollama, LM Studio, hosted APIs and Claude Code over ACP.
+
 The first time, macOS asks for microphone access for your terminal. Laptop speakers leak into the laptop mic, so without `--aec` the loop is **half duplex**: the mic is muted while it speaks (with headphones, `--barge-in` lets you interrupt without echo cancellation).
 
 ### Echo cancellation (`--aec`)
@@ -42,6 +44,8 @@ The first time, macOS asks for microphone access for your terminal. Laptop speak
 - It uses the system default mic and speaker, and turns other apps' audio down only slightly while it runs.
 
 ### Pick a brain
+
+Setup details for each option are in [docs/llm-setup.md](docs/llm-setup.md).
 
 ```bash
 # Default: the local server on port 8080 (mlx_lm.server above), else echo
