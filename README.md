@@ -6,7 +6,7 @@ A local voice agent loop for Apple Silicon in under 2 GB, with no PyTorch.
  mic ──▶ Silero VAD ──▶ Smart Turn ──▶ Parakeet ──▶ your LLM ──▶ Phonon ──▶ speaker
 ```
 
-On an M5 MacBook Pro, the voice pipeline uses **1.4 GB** (physical footprint, GPU memory included) and starts speaking **~350 ms after you stop talking**, before LLM time. With a local Qwen3-4B as the brain, the first word of the answer arrives in 0.6–0.8 s. The draft write-up is in [ARTICLE.md](ARTICLE.md).
+On an M5 MacBook Pro, the voice pipeline uses **1.4 GB** (physical footprint, GPU memory included) and starts speaking **~350 ms after you stop talking**, before LLM time. With a local Qwen3-4B as the brain, the first word of the answer arrives in 0.6–0.8 s.
 
 | Stage | Model | Runtime |
 |---|---|---|
