@@ -50,7 +50,7 @@
     },
     "smart-turn after 300 ms, max 2000 ms": {
       "complete_endpoint_ms_p50": 288.00000000000006,
-      "complete_endpoint_ms_p90": 288.0000000000002,
+      "complete_endpoint_ms_p90": 288.00000000000006,
       "complete_split_rate": 0.0,
       "cut_off_filler_1s": 0.0,
       "cut_off_filler_2s": 1.0,
@@ -59,7 +59,7 @@
     },
     "smart-turn after 300 ms, max 3000 ms (default)": {
       "complete_endpoint_ms_p50": 288.00000000000006,
-      "complete_endpoint_ms_p90": 288.0000000000002,
+      "complete_endpoint_ms_p90": 288.00000000000006,
       "complete_split_rate": 0.0,
       "cut_off_filler_1s": 0.0,
       "cut_off_filler_2s": 0.0,

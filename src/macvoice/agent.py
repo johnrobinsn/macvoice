@@ -7,8 +7,9 @@
 where the time went. :class:`VoiceAgent` runs it live: the microphone
 thread feeds chunks, replies run on a worker thread, and the mic is muted
 while the agent speaks (half duplex) unless ``barge_in`` is on, in which
-case the user starting to talk stops the reply. Use barge-in with
-headphones: on laptop speakers the mic hears the agent.
+case the user starting to talk stops the reply. Barge-in needs either
+headphones or echo cancellation (:mod:`macvoice.audio_mac`); otherwise on
+laptop speakers the mic hears the agent and it interrupts itself.
 
 :func:`simulate` drives the same pieces from a recording with no devices,
 for benchmarks and tests.
@@ -118,15 +119,25 @@ class VoiceAgent:
 
     def __init__(self, vad: Callable[[np.ndarray], float], endpointer: Endpointer,
                  responder: Responder, out: AudioOut, barge_in: bool = False,
-                 echo_guard_s: float = 0.3,
+                 echo_guard_s: float = 0.3, barge_in_ms: float = 250,
+                 barge_in_grace_s: float = 0.5,
                  on_turn: Callable[[TurnMetrics], None] | None = None) -> None:
         self.vad, self.endpointer, self.responder, self.out = vad, endpointer, responder, out
         self.barge_in, self.echo_guard_s = barge_in, echo_guard_s
+        # Speech needed to stop a reply: longer than a turn start, so a cough
+        # doesn't cut it off. Speech in the reply's first ``barge_in_grace_s``
+        # doesn't count: an echo canceller that hasn't heard the room yet
+        # (the first reply of a session) leaks the reply's first syllables.
+        self._barge_in_n = max(1, round(barge_in_ms * SAMPLE_RATE / CHUNK / 1000))
+        self.barge_in_grace_s = barge_in_grace_s
+        self._voiced_run = 0
+        self._speaking_since: float | None = None
         self.on_turn = on_turn
         self._turns: queue.Queue[tuple[TurnEvent, float] | None] = queue.Queue()
         self._cancel = threading.Event()
         self._replying = threading.Event()
         self._muted_until = 0.0
+        self.interruptions = 0  # barge-ins; a reply can be stopped after its metrics are reported
         self._worker = threading.Thread(target=self._work, name="macvoice-responder", daemon=True)
         self._worker.start()
 
@@ -136,20 +147,29 @@ class VoiceAgent:
 
     def feed(self, chunk: np.ndarray, now: float | None = None) -> TurnEvent | None:
         now = time.monotonic() if now is None else now
-        if self.speaking:
+        speaking = self.speaking  # read once: the worker thread changes it
+        if speaking:
+            if self._speaking_since is None:
+                self._speaking_since = now
             self._muted_until = now + self.echo_guard_s
             if not self.barge_in:
                 return None
-        elif now < self._muted_until:
-            return None  # the room's echo of the reply's last words
-        event = self.endpointer.push(chunk, self.vad(chunk))
-        if event is None:
-            return None
-        if event.kind == "start" and self.speaking and self.barge_in:
+        else:
+            self._speaking_since = None
+            if now < self._muted_until:
+                return None  # the room's echo of the reply's last words
+        prob = self.vad(chunk)
+        event = self.endpointer.push(chunk, prob)
+        speech = prob >= self.endpointer.cfg.speech_prob
+        settled = speaking and now - self._speaking_since >= self.barge_in_grace_s
+        self._voiced_run = self._voiced_run + 1 if speech and settled else 0
+        if self._voiced_run >= self._barge_in_n:
             log.info("barge-in: stopping the reply")
+            self._voiced_run = 0
+            self.interruptions += 1
             self._cancel.set()
             self.out.stop()
-        elif event.kind == "end":
+        if event is not None and event.kind == "end":
             self._turns.put((event, now))
         return event
 
@@ -176,11 +196,9 @@ class VoiceAgent:
         self._turns.put(None)
         self._worker.join(timeout=5)
 
-    def run(self, input_device=None, max_turns: int | None = None) -> None:  # pragma: no cover - devices
+    def run(self, mic: "Mic", max_turns: int | None = None) -> None:  # pragma: no cover - devices
         """Blocking: microphone in until Ctrl-C, or until ``max_turns``
         replies have been spoken."""
-        import sounddevice as sd
-
         replies = 0
         finished = threading.Event()
         on_turn = self.on_turn
@@ -196,25 +214,47 @@ class VoiceAgent:
         self.on_turn = count
 
         chunks: queue.Queue[np.ndarray] = queue.Queue()
+        mic.start(chunks.put)
+        log.info("listening (Ctrl-C to quit)")
+        try:
+            while not finished.is_set():
+                try:
+                    self.feed(chunks.get(timeout=0.5))
+                except queue.Empty:
+                    pass
+            while self.out.busy:  # let the last reply finish playing
+                time.sleep(0.05)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self.close()
+            mic.close()
 
-        def on_audio(indata, n, t, status):
-            chunks.put(indata[:, 0].copy())
 
-        with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32", blocksize=CHUNK,
-                            device=input_device, callback=on_audio):
-            log.info("listening (Ctrl-C to quit)")
-            try:
-                while not finished.is_set():
-                    try:
-                        self.feed(chunks.get(timeout=0.5))
-                    except queue.Empty:
-                        pass
-                while self.out.busy:  # let the last reply finish playing
-                    time.sleep(0.05)
-            except KeyboardInterrupt:
-                pass
-            finally:
-                self.close()
+class Mic(Protocol):
+    def start(self, on_chunk: Callable[[np.ndarray], None]) -> None: ...
+    def close(self) -> None: ...
+
+
+class SoundDeviceMic:  # pragma: no cover - devices
+    """The default microphone, opened at 16 kHz (CoreAudio resamples)."""
+
+    def __init__(self, device=None) -> None:
+        self.device = device
+        self._stream = None
+
+    def start(self, on_chunk: Callable[[np.ndarray], None]) -> None:
+        import sounddevice as sd
+
+        self._stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
+                                      blocksize=CHUNK, device=self.device,
+                                      callback=lambda indata, n, t, status: on_chunk(indata[:, 0].copy()))
+        self._stream.start()
+
+    def close(self) -> None:
+        if self._stream is not None:
+            self._stream.stop()
+            self._stream.close()
 
 
 class SpeakerOut:  # pragma: no cover - devices

@@ -259,7 +259,7 @@ TURN_ITEMS = [
      ("I need you to find the file with the, um,", "quarterly budget numbers.")),
     ("Play some relaxing music.",
      ("What's the best way to get to", "the airport from here?")),
-    ("Who wrote Pride and Prejudice?",
+    ("Who painted the Mona Lisa?",
      ("So my question is, hmm,", "how long should I boil an egg?")),
     ("Add milk to my shopping list.",
      ("Could you explain why the sky is blue and", "why sunsets are red?")),

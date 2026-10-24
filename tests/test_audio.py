@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from macvoice.audio import frames, read_wav, resample, write_wav
+from macvoice.audio import Chunker, StreamResampler, frames, read_wav, resample, write_wav
 from tests.conftest import tone
 
 
@@ -72,3 +72,38 @@ def test_frames_pads_last_chunk():
     assert [len(c) for c in chunks] == [512, 512, 512]
     assert chunks[2][:76].sum() == 76 and chunks[2][76:].sum() == 0
     assert frames(np.zeros(0), 512) == []
+
+
+@pytest.mark.parametrize("src", [48000, 44100, 24000])
+def test_stream_resampler_matches_whole_clip_resampling(src):
+    rng = np.random.default_rng(0)
+    x = tone(300, 1.0, src) + tone(1700, 1.0, src, amp=0.2)
+    blocks = np.array_split(x, rng.integers(5, 40))
+    y = np.concatenate([StreamResampler(src, 16000)(b) for b in [x]])
+    y_blocks = np.concatenate(list(map(StreamResampler(src, 16000), blocks)))
+    # Same output however the stream is split, aligned in time with resample().
+    np.testing.assert_allclose(y_blocks, y[: len(y_blocks)], atol=1e-6)
+    ref = resample(x, src, 16000)[: len(y)]
+    mid = slice(200, len(y) - 200)  # away from the clip edges
+    assert np.max(np.abs(y[mid] - ref[mid])) < 0.02
+    assert len(y) >= 16000 - 20
+
+
+def test_stream_resampler_removes_content_above_new_nyquist():
+    x = tone(12000, 1.0, 48000)  # would alias to 4 kHz
+    y = StreamResampler(48000, 16000)(x)
+    assert np.sqrt(np.mean(y[100:] ** 2)) < 0.01
+
+
+def test_stream_resampler_keeps_pitch():
+    rs = StreamResampler(48000, 16000)
+    y = np.concatenate([rs(b) for b in np.array_split(tone(440, 2.0, 48000), 20)])
+    assert dominant_hz(y, 16000) == pytest.approx(440, abs=2)
+
+
+def test_chunker_regroups_blocks():
+    chunk = Chunker(512)
+    x = np.arange(3000, dtype=np.float32)
+    out = [c for b in np.array_split(x, 7) for c in chunk(b)]
+    assert [len(c) for c in out] == [512] * 5
+    np.testing.assert_array_equal(np.concatenate(out), x[:2560])

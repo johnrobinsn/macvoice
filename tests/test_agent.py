@@ -207,11 +207,24 @@ def test_barge_in_stops_the_reply():
     while not agent.speaking and time.time() < deadline:
         time.sleep(0.01)
     assert agent.speaking
-    speak(agent, 0.3, t + 1)                  # the user talks over the reply
+    speak(agent, 0.9, t + 1)                  # the user talks over the reply (past the 0.5 s grace)
     gate.set()
     assert done.wait(2)
     assert turns[0].cancelled
     assert out.stopped == 1
+    agent.close()
+
+
+def test_short_sounds_do_not_stop_the_reply():
+    agent, out, turns, done = make_agent(barge_in=True)
+    out._busy = True
+    speak(agent, 0.45, 0.0)                   # the reply's first 0.5 s: echo leaking, ignored
+    speak(agent, 0.3, 0.45, loud=False)
+    speak(agent, 0.15, 0.75)                  # a cough
+    speak(agent, 0.3, 0.9, loud=False)
+    assert out.stopped == 0 and agent.interruptions == 0
+    speak(agent, 0.3, 1.2)                    # someone actually talking
+    assert out.stopped == 1 and agent.interruptions == 1
     agent.close()
 
 

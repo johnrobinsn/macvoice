@@ -4,10 +4,15 @@ Tests marked ``models`` load the real models from the Hugging Face cache
 (and Silero's ONNX file from ~/.cache/macvoice). They run on Apple Silicon
 by default and are skipped elsewhere; ``-m "not models"`` skips them
 anywhere.
+
+Tests marked ``devices`` use the real microphone and speaker (they play
+sound) and only run when asked for: ``MACVOICE_DEVICE_TESTS=1 uv run pytest
+-m devices``.
 """
 
 from __future__ import annotations
 
+import os
 import platform
 import sys
 from pathlib import Path
@@ -20,12 +25,13 @@ APPLE_SILICON = sys.platform == "darwin" and platform.machine() == "arm64"
 
 
 def pytest_collection_modifyitems(config, items):
-    if APPLE_SILICON:
-        return
-    skip = pytest.mark.skip(reason="needs Apple Silicon (MLX, Metal)")
+    skip_devices = pytest.mark.skip(reason="plays sound and uses the mic: set MACVOICE_DEVICE_TESTS=1")
+    skip_models = pytest.mark.skip(reason="needs Apple Silicon (MLX, Metal)")
     for item in items:
-        if "models" in item.keywords:
-            item.add_marker(skip)
+        if "devices" in item.keywords and not os.environ.get("MACVOICE_DEVICE_TESTS"):
+            item.add_marker(skip_devices)
+        if "models" in item.keywords and not APPLE_SILICON:
+            item.add_marker(skip_models)
 
 
 def tone(freq: float, seconds: float, rate: int = 16000, amp: float = 0.5) -> np.ndarray:

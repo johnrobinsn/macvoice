@@ -74,16 +74,29 @@ def _print_turn(m) -> None:
 
 
 def cmd_run(args) -> None:
-    from macvoice.agent import SpeakerOut, VoiceAgent
+    from macvoice.agent import SoundDeviceMic, SpeakerOut, VoiceAgent
     from macvoice.memory import footprint_mb, torch_loaded
 
     vad, endpointer, responder = _build(args)
-    out = SpeakerOut(responder.tts.sample_rate, device=args.output_device)
+    if args.aec:
+        # One engine is both mic and speaker, so it knows what to cancel.
+        from macvoice.audio_mac import VoiceProcessingIO
+
+        if args.input_device or args.output_device:
+            sys.exit("--aec uses the system default microphone and speaker")
+        out = mic = VoiceProcessingIO(responder.tts.sample_rate)
+        barge_in, echo_guard_s = True, 0.0
+        mode = "  (echo cancellation on: talk over me any time)"
+    else:
+        out = SpeakerOut(responder.tts.sample_rate, device=args.output_device)
+        mic = SoundDeviceMic(args.input_device)
+        barge_in, echo_guard_s = args.barge_in, 0.3
+        mode = "" if barge_in else "  (half duplex: the mic is muted while I talk; --aec to talk over me)"
     fp = footprint_mb()
-    print(f"ready: footprint {fp:.0f} MB, torch loaded: {torch_loaded()}"
-          + ("" if args.barge_in else "  (half duplex: the mic is muted while I talk)"))
-    agent = VoiceAgent(vad, endpointer, responder, out, barge_in=args.barge_in, on_turn=_print_turn)
-    agent.run(input_device=args.input_device, max_turns=args.turns)
+    print(f"ready: footprint {fp:.0f} MB, torch loaded: {torch_loaded()}" + mode)
+    agent = VoiceAgent(vad, endpointer, responder, out, barge_in=barge_in,
+                       echo_guard_s=echo_guard_s, on_turn=_print_turn)
+    agent.run(mic, max_turns=args.turns)
 
 
 def cmd_simulate(args) -> None:
@@ -142,7 +155,11 @@ def main(argv: list[str] | None = None) -> None:
 
     p = sub.add_parser("run", help="talk to it: microphone in, speaker out")
     _add_model_args(p)
-    p.add_argument("--barge-in", action="store_true", help="interrupt replies by talking (use headphones)")
+    p.add_argument("--aec", action="store_true",
+                   help="Apple voice processing (echo cancellation): interrupt replies by talking, "
+                        "even on laptop speakers")
+    p.add_argument("--barge-in", action="store_true",
+                   help="interrupt replies by talking, without echo cancellation (use headphones)")
     p.add_argument("--input-device", default=None)
     p.add_argument("--output-device", default=None)
     p.add_argument("--turns", type=int, default=None, help="exit after this many replies")

@@ -23,9 +23,18 @@ Needs an Apple Silicon Mac, [uv](https://docs.astral.sh/uv/), and ~2.7 GB for th
 ```bash
 uv sync
 uv run macvoice run                  # talk to it; the "echo" brain repeats you back
+uv run macvoice run --aec            # with echo cancellation: talk over it to interrupt
 ```
 
-The first time, macOS asks for microphone access for your terminal. By default the loop is **half duplex**: the mic is muted while it speaks, because laptop speakers leak into the mic. With headphones, add `--barge-in` to interrupt replies by talking.
+The first time, macOS asks for microphone access for your terminal. Laptop speakers leak into the laptop mic, so without `--aec` the loop is **half duplex**: the mic is muted while it speaks (with headphones, `--barge-in` lets you interrupt without echo cancellation).
+
+### Echo cancellation (`--aec`)
+
+`--aec` runs the mic and speaker through one `AVAudioEngine` with Apple's voice processing turned on, the same echo canceller FaceTime uses and Chrome uses for `echoCancellation: "all"` ([`audio_mac.py`](src/macvoice/audio_mac.py), PyObjC; no model, about 70 MB). On an M5's speakers it brings the agent's own voice at the mic from −21 dBFS down to −78 dBFS, below the room's noise, so you can interrupt it by talking. A few things to know:
+
+- It cancels everything the Mac plays, not just the agent: a video playing in the background won't trigger it either.
+- Talking over the reply stops it after 250 ms of speech, so a cough doesn't. Speech in the first 0.5 s of a reply is ignored: the first reply of a session leaks a syllable or two of echo while the canceller learns the room.
+- It uses the system default mic and speaker, and turns other apps' audio down only slightly while it runs.
 
 ### Pick a brain
 
@@ -59,8 +68,8 @@ uv run macvoice run --turns 3                          # exit after three replie
 Each turn prints where the time went:
 
 ```
-  you : Who wrote Pride and Prejudice?
-  bot : Jane Austen wrote Pride and Prejudice.
+  you : Who painted the Mona Lisa?
+  bot : Leonardo da Vinci painted the Mona Lisa.
         endpoint 301 ms (detector, p=0.99) | asr 64 ms | llm 314 ms | tts 10 ms | => first audio 689 ms after you stopped
 ```
 
@@ -88,6 +97,8 @@ The results from the article (M5, 32 GB, macOS 26.6, on AC power) are in [`resul
 uv run pytest                 # everything (~20 s on an M5)
 uv run pytest -m "not models" # unit tests only, no model downloads
 ```
+
+Tests marked `devices` play sound and use the real mic and speaker to check echo cancellation, including a full live loop that is interrupted mid-reply; they're opt-in: `MACVOICE_DEVICE_TESTS=1 uv run pytest -m devices` (in a quiet room). macOS cancels any sound the Mac itself plays, so the "person" interrupting is mixed into the echo-cancelled mic signal; `MACVOICE_HUMAN_TESTS=1 ... -s` asks you to do it for real.
 
 Unit tests cover the endpointer, sentence splitting, the OpenAI-compatible client (against a local SSE server), the ACP client (against a scripted fake agent), the live loop's half duplex, echo guard and barge-in, and the NumPy feature ports (pinned to the PyTorch/transformers reference outputs). Tests marked `models` run the real models: Parakeet accuracy, Phonon → Parakeet round trips, the full loop on 32 spoken prompts, the 2 GB ceiling with no PyTorch, and Claude Code over ACP (skipped if `claude-agent-acp` isn't installed).
 

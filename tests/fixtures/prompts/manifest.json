@@ -133,7 +133,7 @@
       "voice": "default",
       "item": 6,
       "kind": "complete",
-      "text": "Who wrote Pride and Prejudice?"
+      "text": "Who painted the Mona Lisa?"
     },
     {
       "wav": "default_6_head.wav",
@@ -301,7 +301,7 @@
       "voice": "harper",
       "item": 6,
       "kind": "complete",
-      "text": "Who wrote Pride and Prejudice?"
+      "text": "Who painted the Mona Lisa?"
     },
     {
       "wav": "harper_6_head.wav",
@@ -469,7 +469,7 @@
       "voice": "hadley",
       "item": 6,
       "kind": "complete",
-      "text": "Who wrote Pride and Prejudice?"
+      "text": "Who painted the Mona Lisa?"
     },
     {
       "wav": "hadley_6_head.wav",
@@ -637,7 +637,7 @@
       "voice": "juniper",
       "item": 6,
       "kind": "complete",
-      "text": "Who wrote Pride and Prejudice?"
+      "text": "Who painted the Mona Lisa?"
     },
     {
       "wav": "juniper_6_head.wav",
