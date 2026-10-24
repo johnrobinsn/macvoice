@@ -75,9 +75,9 @@ uv run macvoice run --turns 3                          # exit after three replie
 Each turn prints where the time went:
 
 ```
-  you : Who painted the Mona Lisa?
-  bot : Leonardo da Vinci painted the Mona Lisa.
-        endpoint 301 ms (detector, p=0.99) | asr 64 ms | llm 314 ms | tts 10 ms | => first audio 689 ms after you stopped
+  you : How many days are in a leap year?
+  bot : A leap year has 366 days.
+        endpoint 301 ms (detector, p=0.99) | asr 54 ms | llm 404 ms | tts 10 ms | => first audio 769 ms after you stopped
 ```
 
 ## How turns end
@@ -107,7 +107,7 @@ uv run pytest -m "not models" # unit tests only, no model downloads
 
 Tests marked `devices` play sound and use the real mic and speaker to check echo cancellation, including a full live loop that is interrupted mid-reply; they're opt-in: `MACVOICE_DEVICE_TESTS=1 uv run pytest -m devices` (in a quiet room). macOS cancels any sound the Mac itself plays, so the "person" interrupting is mixed into the echo-cancelled mic signal; `MACVOICE_HUMAN_TESTS=1 ... -s` asks you to do it for real.
 
-Unit tests cover the endpointer, sentence splitting, the OpenAI-compatible client (against a local SSE server), the ACP client (against a scripted fake agent), the live loop's half duplex, echo guard and barge-in, and the NumPy feature ports (pinned to the PyTorch/transformers reference outputs). Tests marked `models` run the real models: Parakeet accuracy, Phonon → Parakeet round trips, the full loop on 32 spoken prompts, the 2 GB ceiling with no PyTorch, and Claude Code over ACP (skipped if `claude-agent-acp` isn't installed).
+Unit tests cover the endpointer, sentence splitting, the OpenAI-compatible client and brain selection (against a local SSE server), the ACP client (against a scripted fake agent), the live loop's half duplex, echo guard and barge-in rules, the streaming resampler for the voice-processing mic, and the NumPy feature ports (pinned to the PyTorch/transformers reference outputs). Tests marked `models` run the real models: Parakeet accuracy, Phonon → Parakeet round trips, the full loop on 32 spoken prompts, the 2 GB ceiling with no PyTorch, and Claude Code over ACP (skipped if `claude-agent-acp` isn't installed).
 
 ## Licenses
 
