@@ -17,11 +17,13 @@ def _add_model_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--precision", default="q8", help="Parakeet precision: bf16 fp16 q8 q6 q4")
     p.add_argument("--tts", default="phonon", choices=["phonon", "kokoro"])
     p.add_argument("--voice", default=None, help="TTS voice (Phonon catalog name, e.g. Harper)")
-    p.add_argument("--llm", default="echo", choices=["echo", "openai", "acp"],
-                   help="echo: repeat what you said; openai: any OpenAI-compatible server; "
-                        "acp: a coding agent over ACP (default command claude-agent-acp)")
-    p.add_argument("--base-url", default=None, help="OpenAI-compatible base URL "
-                   "(default http://localhost:8080/v1, mlx_lm.server)")
+    p.add_argument("--llm", default=None, choices=["server", "echo", "acp", "openai"],
+                   help="server: an OpenAI-compatible endpoint (--base-url); echo: repeat what you "
+                        "said; acp: a coding agent over ACP (default command claude-agent-acp). "
+                        "Default: the local server on port 8080 if one is running, else echo")
+    p.add_argument("--base-url", default=None, help="OpenAI-compatible base URL: a local server "
+                   "(mlx_lm.server, Ollama, LM Studio, llama.cpp) or a hosted API "
+                   "(default http://localhost:8080/v1)")
     p.add_argument("--model", default=None)
     p.add_argument("--api-key", default=None)
     p.add_argument("--acp-command", default=None,
@@ -48,9 +50,13 @@ def _build(args, need_tts: bool = True):
     detector = None if args.no_turn_detector else SmartTurn()
     max_silence = args.max_silence_ms or (1500 if detector is None else 3000)
     endpointer = Endpointer(detector, EndpointConfig(max_silence_ms=max_silence, threshold=args.threshold))
-    responder = Responder(asr.load(args.asr, args.precision),
-                          llm.load(args.llm, args.base_url, args.model, args.api_key,
-                                   args.acp_command, args.allow_tools),
+    try:
+        brain, about = llm.load(args.llm, args.base_url, args.model, args.api_key,
+                                args.acp_command, args.allow_tools)
+    except RuntimeError as e:
+        sys.exit(f"macvoice: {e}")
+    print(f"brain: {about}", flush=True)
+    responder = Responder(asr.load(args.asr, args.precision), brain,
                           tts.load(args.tts, args.voice) if need_tts else None)
     logging.getLogger("macvoice").info("models loaded in %.1f s", time.perf_counter() - t0)
     return vad, endpointer, responder

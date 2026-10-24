@@ -22,9 +22,14 @@ Needs an Apple Silicon Mac, [uv](https://docs.astral.sh/uv/), and ~2.7 GB for th
 
 ```bash
 uv sync
-uv run macvoice run                  # talk to it; the "echo" brain repeats you back
+# In another terminal, a local LLM (optional; ~2.6 GB, fully offline):
+uvx --from mlx-lm mlx_lm.server --model mlx-community/Qwen3-4B-Instruct-2507-4bit --prompt-cache-size 1
+
+uv run macvoice run                  # talk to it
 uv run macvoice run --aec            # with echo cancellation: talk over it to interrupt
 ```
+
+At startup it prints which brain it's using. By default that's the LLM server on `localhost:8080` if one is running; otherwise an "echo" brain that repeats what you say, so you can try the audio loop with no LLM at all.
 
 The first time, macOS asks for microphone access for your terminal. Laptop speakers leak into the laptop mic, so without `--aec` the loop is **half duplex**: the mic is muted while it speaks (with headphones, `--barge-in` lets you interrupt without echo cancellation).
 
@@ -39,12 +44,14 @@ The first time, macOS asks for microphone access for your terminal. Laptop speak
 ### Pick a brain
 
 ```bash
-# A local model on MLX (fully offline; ~2.6 GB in its own process)
-uvx --from mlx-lm mlx_lm.server --model mlx-community/Qwen3-4B-Instruct-2507-4bit --prompt-cache-size 1
-uv run macvoice run --llm openai
+# Default: the local server on port 8080 (mlx_lm.server above), else echo
+uv run macvoice run
 
-# Any other OpenAI-compatible endpoint (Ollama, LM Studio, llama.cpp, hosted APIs)
-uv run macvoice run --llm openai --base-url http://localhost:11434/v1 --model llama3.2
+# Any other OpenAI-compatible endpoint: Ollama, LM Studio, llama.cpp, or a hosted API
+uv run macvoice run --base-url http://localhost:11434/v1 --model llama3.2
+
+# Just the audio loop, even if a server is running
+uv run macvoice run --llm echo
 
 # Claude Code over ACP (npm i -g @agentclientprotocol/claude-agent-acp)
 uv run macvoice run --llm acp

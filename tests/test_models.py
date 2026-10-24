@@ -107,8 +107,10 @@ def _cli(*args, timeout=300):
 def test_cli_simulate_and_say(tmp_path):
     from tests.conftest import FIXTURES
 
-    r = _cli("simulate", str(FIXTURES / "prompts/harper_2_complete.wav"), "-o", str(tmp_path / "r.wav"))
+    r = _cli("simulate", "--llm", "echo", str(FIXTURES / "prompts/harper_2_complete.wav"),
+             "-o", str(tmp_path / "r.wav"))
     assert r.returncode == 0, r.stderr
+    assert "brain: echo" in r.stdout
     assert "How many days are in a leap year?" in r.stdout
     assert "first audio" in r.stdout
     assert (tmp_path / "r.wav").stat().st_size > 10_000

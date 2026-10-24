@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from macvoice.llm import SYSTEM_PROMPT, Echo, OpenAICompatible, parse_sse, sentences
+from macvoice.llm import SYSTEM_PROMPT, Echo, OpenAICompatible, load, parse_sse, sentences
 
 
 def sse(*deltas, done=True):
@@ -59,6 +59,15 @@ def server():
     seen = {}
 
     class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            seen["get"] = self.path
+            body = json.dumps({"object": "list", "data": [{"id": "qwen-local"}]}).encode()
+            self.send_response(200 if self.path == "/v1/models" else 404)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
         def do_POST(self):
             seen["path"] = self.path
             seen["auth"] = self.headers.get("Authorization")
@@ -95,3 +104,39 @@ def test_openai_compatible_without_key_sends_no_auth(server):
     list(OpenAICompatible(base_url=url).reply([{"role": "user", "content": "x"}]))
     assert seen["auth"] is None
     assert "model" not in seen["body"]                       # the server's loaded model
+
+
+def closed_port_url() -> str:
+    import socket
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return f"http://127.0.0.1:{sock.getsockname()[1]}/v1"
+
+
+def test_load_uses_a_running_server_and_names_its_model(server, monkeypatch):
+    url, seen = server
+    monkeypatch.setattr("macvoice.llm.DEFAULT_BASE_URL", url)
+    brain, about = load()                                    # no --llm: the local server
+    assert isinstance(brain, OpenAICompatible)
+    assert about == f"qwen-local at {url}" and seen["get"] == "/v1/models"
+    assert load(model="other")[1] == f"other at {url}"
+
+
+def test_load_falls_back_to_echo_when_no_server_is_running(monkeypatch):
+    monkeypatch.setattr("macvoice.llm.DEFAULT_BASE_URL", closed_port_url())
+    brain, about = load()
+    assert isinstance(brain, Echo)
+    assert about.startswith("echo") and "mlx_lm.server" in about  # says how to start one
+
+
+def test_load_fails_loudly_when_a_server_was_asked_for():
+    url = closed_port_url()
+    for kwargs in ({"name": "server", "base_url": url}, {"base_url": url}, {"name": "openai", "base_url": url}):
+        with pytest.raises(RuntimeError, match="no LLM server"):
+            load(**kwargs)
+
+
+def test_load_echo_and_unknown():
+    assert isinstance(load("echo")[0], Echo)
+    with pytest.raises(ValueError):
+        load("gpt")
