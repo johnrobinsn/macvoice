@@ -88,29 +88,57 @@ def _print_turn(m, emit=print) -> None:
     emit("\n".join(lines))
 
 
+class _StartedMic:
+    """A mic that's already running; ``start`` just says where chunks go.
+    Starting it early is how :func:`open_audio` finds out it works."""
+
+    def __init__(self, io) -> None:
+        self.io, self._target = io, None
+        io.start(lambda c: self._target and self._target(c))
+
+    def start(self, on_chunk) -> None:
+        self._target = on_chunk
+
+    def close(self) -> None:
+        self.io.close()
+
+
+def open_audio(args, rate: int, note=print):
+    """``(mic, out, barge_in, echo_guard_s, mode)``. Echo cancellation
+    (Apple voice processing) unless ``--no-aec``; it needs the system
+    default devices, and if it won't start the loop runs half duplex."""
+    from macvoice.agent import SoundDeviceMic, SpeakerOut
+
+    aec = args.aec
+    if aec and (args.input_device or args.output_device):
+        note("echo cancellation uses the system default mic and speaker, so it's off")
+        aec = False
+    if aec:
+        try:
+            # One engine is both mic and speaker, so it knows what to cancel.
+            from macvoice.audio_mac import VoiceProcessingIO
+
+            io = VoiceProcessingIO(rate)
+            return _StartedMic(io), io, True, 0.0, "echo cancellation on: talk over me any time"
+        except Exception as e:  # noqa: BLE001 - any device or OS refusal: fall back
+            note(f"echo cancellation didn't start ({e}); running half duplex")
+    out = SpeakerOut(rate, device=args.output_device)
+    mic = SoundDeviceMic(args.input_device)
+    if args.barge_in:
+        return mic, out, True, 0.3, "no echo cancellation: use headphones to talk over me"
+    return mic, out, False, 0.3, "half duplex: the mic is muted while I talk"
+
+
 def cmd_run(args) -> None:
-    from macvoice.agent import SoundDeviceMic, SpeakerOut, VoiceAgent
+    from macvoice.agent import VoiceAgent
     from macvoice.memory import footprint_mb, torch_loaded
 
     vad, endpointer, responder = _build(args)
-    if args.aec:
-        # One engine is both mic and speaker, so it knows what to cancel.
-        from macvoice.audio_mac import VoiceProcessingIO
-
-        if args.input_device or args.output_device:
-            sys.exit("--aec uses the system default microphone and speaker")
-        out = mic = VoiceProcessingIO(responder.tts.sample_rate)
-        barge_in, echo_guard_s = True, 0.0
-        mode = "  (echo cancellation on: talk over me any time)"
-    else:
-        out = SpeakerOut(responder.tts.sample_rate, device=args.output_device)
-        mic = SoundDeviceMic(args.input_device)
-        barge_in, echo_guard_s = args.barge_in, 0.3
-        mode = "" if barge_in else "  (half duplex: the mic is muted while I talk; --aec to talk over me)"
+    mic, out, barge_in, echo_guard_s, mode = open_audio(args, responder.tts.sample_rate)
     from macvoice.status import StatusLine
 
     fp = footprint_mb()
-    print(f"ready: footprint {fp:.0f} MB, torch loaded: {torch_loaded()}" + mode)
+    print(f"ready: footprint {fp:.0f} MB, torch loaded: {torch_loaded()}  ({mode})")
     print("Talk to me. Ctrl-C to quit.", flush=True)
     agent = VoiceAgent(vad, endpointer, responder, out, barge_in=barge_in, echo_guard_s=echo_guard_s)
     # -v logs to the same terminal, which would tear the live line.
@@ -183,18 +211,19 @@ def cmd_say(args) -> None:
         sd.play(audio, engine.sample_rate, blocking=True)
 
 
-def main(argv: list[str] | None = None) -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="macvoice", description=__doc__)
     parser.add_argument("-v", "--verbose", action="store_true")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("run", help="talk to it: microphone in, speaker out")
     _add_model_args(p)
-    p.add_argument("--aec", action="store_true",
-                   help="Apple voice processing (echo cancellation): interrupt replies by talking, "
-                        "even on laptop speakers")
+    p.add_argument("--aec", action=argparse.BooleanOptionalAction, default=True,
+                   help="Apple voice processing (echo cancellation), on by default: interrupt replies "
+                        "by talking, even on laptop speakers. --no-aec: half duplex, the mic is muted "
+                        "while it talks")
     p.add_argument("--barge-in", action="store_true",
-                   help="interrupt replies by talking, without echo cancellation (use headphones)")
+                   help="with --no-aec: interrupt replies by talking anyway (use headphones)")
     p.add_argument("--input-device", default=None)
     p.add_argument("--output-device", default=None)
     p.add_argument("--turns", type=int, default=None, help="exit after this many replies")
@@ -231,7 +260,11 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("rest", nargs=argparse.REMAINDER)
     p.set_defaults(fn=lambda a: __import__("macvoice.bench", fromlist=["main"]).main(a.rest))
 
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = build_parser().parse_args(argv)
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING,
                         format="%(asctime)s %(name)s %(message)s", stream=sys.stderr)
     args.fn(args)

@@ -27,8 +27,7 @@ uv run macvoice download             # the models, 0.85 GB, once
 # In another terminal, a local LLM (optional; ~2.6 GB, fully offline):
 uvx --from mlx-lm mlx_lm.server --model mlx-community/Qwen3-4B-Instruct-2507-4bit --prompt-cache-size 1
 
-uv run macvoice run                  # talk to it
-uv run macvoice run --aec            # with echo cancellation: talk over it to interrupt
+uv run macvoice run                  # talk to it; talk over it to interrupt
 ```
 
 After the download the voice pipeline runs offline. (`run` downloads anything still missing itself, so `download` is only there to get the wait out of the way first.) While it runs, the bottom line of the terminal shows what it's doing and how loud your mic is:
@@ -43,15 +42,18 @@ At startup it prints which brain it's using. By default that's the LLM server on
 
 **New to running a local LLM?** [docs/llm-setup.md](docs/llm-setup.md) walks through it step by step (Qwen3-4B on MLX, about 2 minutes plus a 2.1 GB download), along with Ollama, LM Studio, hosted APIs and Claude Code over ACP.
 
-The first time, macOS asks for microphone access for your terminal. Laptop speakers leak into the laptop mic, so without `--aec` the loop is **half duplex**: the mic is muted while it speaks (with headphones, `--barge-in` lets you interrupt without echo cancellation).
+The first time, macOS asks for microphone access for your terminal.
 
-### Echo cancellation (`--aec`)
+### Echo cancellation (on by default)
 
-`--aec` runs the mic and speaker through one `AVAudioEngine` with Apple's voice processing turned on, the same echo canceller FaceTime uses and Chrome uses for `echoCancellation: "all"` ([`audio_mac.py`](src/macvoice/audio_mac.py), PyObjC; no model, about 70 MB). On an M5's speakers it brings the agent's own voice at the mic from −21 dBFS down to −78 dBFS, below the room's noise, so you can interrupt it by talking. A few things to know:
+Laptop speakers leak into the laptop mic, so a voice agent hears itself. macvoice runs the mic and speaker through one `AVAudioEngine` with Apple's voice processing turned on, the same echo canceller FaceTime uses and Chrome uses for `echoCancellation: "all"` ([`audio_mac.py`](src/macvoice/audio_mac.py), PyObjC; no model, about 70 MB). On an M5's speakers it brings the agent's own voice at the mic from −21 dBFS down to −78 dBFS, below the room's noise, so you can interrupt it by talking. A few things to know:
 
 - It cancels everything the Mac plays, not just the agent: a video playing in the background won't trigger it either.
 - Talking over the reply stops it after 250 ms of speech, so a cough doesn't. Speech in the first 0.5 s of a reply is ignored: the first reply of a session leaks a syllable or two of echo while the canceller learns the room.
-- It uses the system default mic and speaker, and turns other apps' audio down only slightly while it runs.
+- It uses the system default mic and speaker, and turns other apps' audio down only slightly while it runs. Choosing a device with `--input-device` or `--output-device` turns it off, and if voice processing won't start on your audio hardware macvoice says so and runs half duplex.
+- `--no-aec` turns it off: the loop is then **half duplex**, the mic muted while it speaks. With headphones, `--no-aec --barge-in` lets you interrupt without echo cancellation.
+
+The `ready:` line at startup says which mode you're in.
 
 ### Pick a brain
 

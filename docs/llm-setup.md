@@ -38,7 +38,7 @@ You should see the model name in the reply.
 **3. Run macvoice** in another terminal:
 
 ```bash
-uv run macvoice run          # add --aec to talk over it on laptop speakers
+uv run macvoice run
 ```
 
 The `brain:` line at startup should name the Qwen model. Ask it something.
