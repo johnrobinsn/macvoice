@@ -12,6 +12,7 @@ decoding assistant, the configuration the article starts from.
 
 from __future__ import annotations
 
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Protocol, TypeVar
 
@@ -20,9 +21,17 @@ import numpy as np
 from macvoice import SAMPLE_RATE
 
 T = TypeVar("T")
+log = logging.getLogger("macvoice")
 
 PARAKEET_MODEL = "mlx-community/parakeet-tdt-0.6b-v2"
+PARAKEET_REVISION = "8ae155301e23d820d82aa60d24817c900e69e487"
+# The same model with the 8-bit encoder already applied
+# (scripts/make_parakeet_q8.py): a 0.7 GB download instead of the 2.3 GB
+# fp32 checkpoint, and nothing to convert at load.
+PARAKEET_Q8 = "johnrobinsn/parakeet-tdt-0.6b-v2-mlx-q8"
+PARAKEET_Q8_REVISION = "aad991e02731e67298700cf1f2b86ddaa45dd18c"
 PRECISIONS = ("bf16", "fp16", "q8", "q6", "q4")
+GROUP_SIZE = 64
 
 
 class ASR(Protocol):
@@ -66,18 +75,17 @@ class Parakeet:
         self._model = self._thread.run(self._load)
 
     def _load(self):
-        """bf16 = as published; fp16 casts (M1 GPUs have no native bf16);
-        qN quantizes the encoder (~99% of the weights, group size 64). The
-        decoder and joint network stay in full precision."""
         import mlx.core as mx
-        import mlx.nn as nn
-        from parakeet_mlx import from_pretrained
 
-        model = from_pretrained(self.model_id)
-        if self.precision == "fp16":
-            model.set_dtype(mx.float16)
-        elif self.precision.startswith("q"):
-            nn.quantize(model.encoder, group_size=64, bits=int(self.precision[1:]))
+        if self.model_id == PARAKEET_MODEL and self.precision == "q8":
+            try:
+                model = load_quantized(*model_files(PARAKEET_Q8, PARAKEET_Q8_REVISION), bits=8)
+                mx.eval(model.parameters())
+                return model
+            except OSError as e:  # offline, or the copy is gone: convert the original
+                log.warning("couldn't get %s (%s); converting %s instead", PARAKEET_Q8, e, PARAKEET_MODEL)
+        revision = PARAKEET_REVISION if self.model_id == PARAKEET_MODEL else None
+        model = convert(*model_files(self.model_id, revision), precision=self.precision)
         mx.eval(model.parameters())
         return model
 
@@ -91,6 +99,52 @@ class Parakeet:
             return results[0].text.strip() if results else ""
 
         return self._thread.run(run)
+
+
+def model_files(repo: str, revision: str | None) -> tuple[str, str]:
+    """``(config.json, model.safetensors)`` paths, downloaded if needed."""
+    from huggingface_hub import hf_hub_download
+
+    return tuple(hf_hub_download(repo, f, revision=revision) for f in ("config.json", "model.safetensors"))
+
+
+def convert(config: str, weights: str, precision: str = "q8"):
+    """The published checkpoint at ``precision``: bf16 is what parakeet-mlx
+    loads; fp16 casts (M1 GPUs have no native bf16); qN quantizes the
+    encoder (~99% of the weights, group size 64). The decoder and joint
+    network stay in bf16."""
+    import json
+
+    import mlx.core as mx
+    import mlx.nn as nn
+    from mlx.utils import tree_flatten, tree_unflatten
+    from parakeet_mlx.utils import from_config
+
+    with open(config) as f:
+        model = from_config(json.load(f))
+    model.load_weights(weights)
+    model.update(tree_unflatten([(k, v.astype(mx.bfloat16)) for k, v in tree_flatten(model.parameters())]))
+    if precision == "fp16":
+        model.set_dtype(mx.float16)
+    elif precision.startswith("q"):
+        nn.quantize(model.encoder, group_size=GROUP_SIZE, bits=int(precision[1:]))
+    return model
+
+
+def load_quantized(config: str, weights: str, bits: int = 8):
+    """A model saved after :func:`convert` quantized its encoder. Quantizing
+    the freshly built model first gives it the saved weights' shapes; its
+    random initial weights are lazy and never computed."""
+    import json
+
+    import mlx.nn as nn
+    from parakeet_mlx.utils import from_config
+
+    with open(config) as f:
+        model = from_config(json.load(f))
+    nn.quantize(model.encoder, group_size=GROUP_SIZE, bits=bits)
+    model.load_weights(weights)
+    return model
 
 
 class WhisperHF:

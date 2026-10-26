@@ -38,13 +38,21 @@ def _add_model_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--threshold", type=float, default=0.5, help="Smart Turn P(complete) to end a turn")
 
 
+def _assets(args, need_tts: bool = True):
+    from macvoice import models
+
+    return models.assets(args.asr, args.precision, args.tts,
+                         turn_detector=not getattr(args, "no_turn_detector", False), need_tts=need_tts)
+
+
 def _build(args, need_tts: bool = True):
-    from macvoice import asr, llm, tts
+    from macvoice import asr, llm, models, tts
     from macvoice.agent import Responder
     from macvoice.endpointing import EndpointConfig, Endpointer
     from macvoice.turn import SmartTurn
     from macvoice.vad import SileroVAD
 
+    models.ensure(_assets(args, need_tts))
     t0 = time.perf_counter()
     vad = SileroVAD()
     detector = None if args.no_turn_detector else SmartTurn()
@@ -62,11 +70,11 @@ def _build(args, need_tts: bool = True):
     return vad, endpointer, responder
 
 
-def _print_turn(m) -> None:
+def _print_turn(m, emit=print) -> None:
     total = m.speech_end_to_first_audio_ms
-    print(f"\n  you : {m.transcript}")
+    lines = ["", f"  you : {m.transcript}"]
     if m.reply:
-        print(f"  bot : {m.reply}")
+        lines.append(f"  bot : {m.reply}")
     parts = [f"endpoint {m.endpoint_ms:.0f} ms ({m.endpoint_reason}"
              + (f", p={m.p_complete:.2f})" if m.p_complete is not None else ")"),
              f"asr {m.asr_ms:.0f} ms"]
@@ -76,7 +84,8 @@ def _print_turn(m) -> None:
         parts.append(f"tts {m.tts_first_audio_ms:.0f} ms")
     if total is not None:
         parts.append(f"=> first audio {total:.0f} ms after you stopped")
-    print("        " + " | ".join(parts), flush=True)
+    lines.append("        " + " | ".join(parts))
+    emit("\n".join(lines))
 
 
 def cmd_run(args) -> None:
@@ -98,11 +107,21 @@ def cmd_run(args) -> None:
         mic = SoundDeviceMic(args.input_device)
         barge_in, echo_guard_s = args.barge_in, 0.3
         mode = "" if barge_in else "  (half duplex: the mic is muted while I talk; --aec to talk over me)"
+    from macvoice.status import StatusLine
+
     fp = footprint_mb()
     print(f"ready: footprint {fp:.0f} MB, torch loaded: {torch_loaded()}" + mode)
-    agent = VoiceAgent(vad, endpointer, responder, out, barge_in=barge_in,
-                       echo_guard_s=echo_guard_s, on_turn=_print_turn)
-    agent.run(mic, max_turns=args.turns)
+    print("Talk to me. Ctrl-C to quit.", flush=True)
+    agent = VoiceAgent(vad, endpointer, responder, out, barge_in=barge_in, echo_guard_s=echo_guard_s)
+    # -v logs to the same terminal, which would tear the live line.
+    status = StatusLine(lambda: (agent.state, agent.level_db), barge_in=barge_in,
+                        enabled=False if args.no_status or args.verbose else None)
+    agent.on_turn = lambda m: _print_turn(m, status.print)
+    status.start()
+    try:
+        agent.run(mic, max_turns=args.turns)
+    finally:
+        status.stop()
 
 
 def cmd_simulate(args) -> None:
@@ -119,10 +138,18 @@ def cmd_simulate(args) -> None:
         print(f"reply audio -> {args.out}")
 
 
+def cmd_download(args) -> None:
+    from macvoice import models
+
+    models.download(_assets(args))
+
+
 def cmd_transcribe(args) -> None:
-    from macvoice import asr
+    from macvoice import asr, models
     from macvoice.audio import read_wav
 
+    if args.asr == "parakeet":
+        models.ensure(models.parakeet(args.precision))
     model = asr.load(args.asr, args.precision)
     for path in args.wav:
         audio, _ = read_wav(path, SAMPLE_RATE)
@@ -132,9 +159,11 @@ def cmd_transcribe(args) -> None:
 
 
 def cmd_say(args) -> None:
-    from macvoice import tts
+    from macvoice import models, tts
     from macvoice.audio import write_wav
 
+    if args.tts == "phonon":
+        models.ensure(models.phonon())
     engine = tts.load(args.tts, args.voice)
     t0 = time.perf_counter()
     first = None
@@ -169,7 +198,15 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--input-device", default=None)
     p.add_argument("--output-device", default=None)
     p.add_argument("--turns", type=int, default=None, help="exit after this many replies")
+    p.add_argument("--no-status", action="store_true", help="no live status line, just the turn summaries")
     p.set_defaults(fn=cmd_run)
+
+    p = sub.add_parser("download", help="download the models now (about 0.85 GB, once), "
+                                        "so run starts listening right away")
+    p.add_argument("--asr", default="parakeet", choices=["parakeet", "whisper"])
+    p.add_argument("--precision", default="q8", help="Parakeet precision: bf16 fp16 q8 q6 q4")
+    p.add_argument("--tts", default="phonon", choices=["phonon", "kokoro"])
+    p.set_defaults(fn=cmd_download)
 
     p = sub.add_parser("simulate", help="run a WAV recording through the loop, no devices")
     _add_model_args(p)

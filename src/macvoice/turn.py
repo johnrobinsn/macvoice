@@ -19,6 +19,7 @@ from macvoice import SAMPLE_RATE
 from macvoice.features import whisper_log_mel
 
 HF_REPO = "pipecat-ai/smart-turn-v3"
+HF_REVISION = "f766f81d3cfdf7737ac64aad813d91bbfd56bf93"
 ONNX_FILENAME = "smart-turn-v3.2-cpu.onnx"
 WINDOW_S = 8
 
@@ -32,7 +33,7 @@ class SmartTurn:
             import onnxruntime as ort
             from huggingface_hub import hf_hub_download
 
-            path = hf_hub_download(repo_id=HF_REPO, filename=ONNX_FILENAME)
+            path = hf_hub_download(repo_id=HF_REPO, filename=ONNX_FILENAME, revision=HF_REVISION)
             opts = ort.SessionOptions()
             opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
             opts.inter_op_num_threads = 1

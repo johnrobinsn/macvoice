@@ -18,6 +18,10 @@ from typing import Iterator, Protocol
 import numpy as np
 
 TTS_RATE = 24000
+# What ptts 0.4 loads by default, pinned here so macvoice.models can fetch
+# the same files up front.
+PHONON_REPO = "gradium/phonon-31m-en"
+PHONON_REVISION = "8c64b55ec301728e2d1695bfea87a08a267d0c2d"
 
 
 class TTS(Protocol):
@@ -41,7 +45,7 @@ class Phonon:
         quant = "f32" if device == "metal" else "q8_0"
         if device == "cpu":
             ptts.set_num_threads(4)
-        self._tts = ptts.TTS(lang="en", device=device, quant=quant)
+        self._tts = ptts.TTS(f"hf://{PHONON_REPO}@{PHONON_REVISION}", lang="en", device=device, quant=quant)
         self.sample_rate = int(self._tts.sample_rate)
         self.voice = voice
 

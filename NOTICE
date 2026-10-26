@@ -5,7 +5,9 @@ Models downloaded at runtime (not redistributed here):
 
 - Silero VAD v6.2.3 (snakers4/silero-vad) - MIT
 - Smart Turn v3.2 (pipecat-ai/smart-turn-v3) - BSD-2-Clause
-- Parakeet TDT 0.6B v2 (nvidia/parakeet-tdt-0.6b-v2; MLX weights mlx-community/parakeet-tdt-0.6b-v2) - CC-BY-4.0
+- Parakeet TDT 0.6B v2 by NVIDIA (nvidia/parakeet-tdt-0.6b-v2; MLX weights mlx-community/parakeet-tdt-0.6b-v2) - CC-BY-4.0.
+  macvoice downloads johnrobinsn/parakeet-tdt-0.6b-v2-mlx-q8, a modified version (bf16, 8-bit encoder)
+  made by scripts/make_parakeet_q8.py and published under the same license.
 - Phonon 31M English and voice catalog (gradium/phonon-31m-en, gradium/phonon-voices) - Apache-2.0
 
 Optional baseline (the "baseline" extra): Whisper large-v3 and distil-large-v3 (MIT), Kokoro-82M (Apache-2.0).

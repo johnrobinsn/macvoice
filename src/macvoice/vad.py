@@ -9,6 +9,7 @@ probabilities match the PyTorch JIT model to ~1e-5
 
 from __future__ import annotations
 
+import hashlib
 import threading
 import urllib.request
 from pathlib import Path
@@ -17,16 +18,28 @@ import numpy as np
 
 CHUNK = 512  # samples at 16 kHz = 32 ms
 _CONTEXT = 64
-_URL = "https://github.com/snakers4/silero-vad/raw/v6.2.3/src/silero_vad/data/silero_vad.onnx"
+VERSION = "v6.2.3"
+URL = f"https://github.com/snakers4/silero-vad/raw/{VERSION}/src/silero_vad/data/silero_vad.onnx"
+SHA256 = "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3"
+SIZE = 2327524
+
+
+def cache_path() -> Path:
+    return Path.home() / ".cache/macvoice/silero_vad.onnx"
 
 
 def model_path() -> Path:
-    """silero_vad.onnx (MIT), downloaded once (~2 MB)."""
-    dest = Path.home() / ".cache/macvoice/silero_vad.onnx"
+    """silero_vad.onnx (MIT), downloaded once (~2 MB) and checked against
+    its SHA-256, since it comes from a git tag rather than a pinned commit."""
+    dest = cache_path()
     if not dest.exists():
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_suffix(".part")
-        urllib.request.urlretrieve(_URL, tmp)
+        urllib.request.urlretrieve(URL, tmp)
+        digest = hashlib.sha256(tmp.read_bytes()).hexdigest()
+        if digest != SHA256:
+            tmp.unlink()
+            raise RuntimeError(f"{URL} has SHA-256 {digest}, expected {SHA256}")
         tmp.replace(dest)
     return dest
 

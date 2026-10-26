@@ -228,6 +228,14 @@ def test_short_sounds_do_not_stop_the_reply():
     agent.close()
 
 
+def test_talking_on_over_a_stopped_reply_is_one_interruption():
+    agent, out, turns, done = make_agent(barge_in=True)
+    out._busy = True                          # the stopped reply's audio winding down
+    speak(agent, 2.5, 0.0)
+    assert out.stopped == 1 and agent.interruptions == 1
+    agent.close()
+
+
 def test_agent_survives_a_failing_reply():
     class Boom(FakeASR):
         def transcribe(self, audio):
@@ -240,4 +248,44 @@ def test_agent_survives_a_failing_reply():
     speak(agent, 0.5, t, loud=False)
     time.sleep(0.2)
     assert not agent.speaking
+    agent.close()
+
+
+def wait_for(cond, timeout=2.0):
+    deadline = time.time() + timeout
+    while not cond() and time.time() < deadline:
+        time.sleep(0.01)
+    return cond()
+
+
+def test_agent_state_follows_the_turn():
+    """listening -> hearing (in the turn) -> thinking (reply under way, no
+    audio yet) -> speaking, including the gaps between sentences ->
+    listening."""
+    gate = threading.Event()
+    agent, out, turns, done = make_agent(tts=FakeTTS(block=gate))
+    silence = np.zeros(CHUNK, dtype=np.float32)
+    assert agent.state == "listening"
+    t = speak(agent, 0.5, 0.0)
+    assert agent.state == "hearing"
+    speak(agent, 0.5, t, loud=False)
+    assert wait_for(lambda: agent.state == "thinking")
+    out._busy = True                          # the first sentence playing
+    agent.feed(silence, now=5.0)
+    assert agent.state == "speaking"
+    out._busy = False                         # between sentences
+    agent.feed(silence, now=5.1)
+    assert agent.state == "speaking"
+    gate.set()
+    assert done.wait(2)
+    assert wait_for(lambda: agent.state == "listening")
+    agent.close()
+
+
+def test_agent_reports_the_mic_level():
+    agent, *_ = make_agent()
+    agent.feed(tone(300, 0.032, amp=0.5)[:CHUNK], now=0.0)
+    assert agent.level_db == pytest.approx(-9.0, abs=0.5)   # a 0.5 sine's RMS is -9 dBFS
+    agent.feed(np.zeros(CHUNK, dtype=np.float32), now=0.1)
+    assert agent.level_db == pytest.approx(-100, abs=1)
     agent.close()

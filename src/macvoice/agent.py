@@ -138,6 +138,8 @@ class VoiceAgent:
         self._replying = threading.Event()
         self._muted_until = 0.0
         self.interruptions = 0  # barge-ins; a reply can be stopped after its metrics are reported
+        self.level_db = -100.0  # the last mic chunk's level, dBFS (for the status line)
+        self._audible = False   # the current reply has played audio
         self._worker = threading.Thread(target=self._work, name="macvoice-responder", daemon=True)
         self._worker.start()
 
@@ -145,10 +147,23 @@ class VoiceAgent:
     def speaking(self) -> bool:
         return self._replying.is_set() or self.out.busy
 
+    @property
+    def state(self) -> str:
+        """``speaking`` (reply audio playing), ``thinking`` (working on a
+        reply, nothing playing yet), ``hearing`` (in a turn) or
+        ``listening``. A reply stays ``speaking`` between its sentences."""
+        if self.out.busy or (self._replying.is_set() and self._audible):
+            return "speaking"
+        if self._replying.is_set():
+            return "thinking"
+        return "hearing" if self.endpointer.in_turn else "listening"
+
     def feed(self, chunk: np.ndarray, now: float | None = None) -> TurnEvent | None:
         now = time.monotonic() if now is None else now
+        self.level_db = float(20 * np.log10(np.sqrt(np.mean(np.square(chunk))) + 1e-5))
         speaking = self.speaking  # read once: the worker thread changes it
         if speaking:
+            self._audible = self._audible or self.out.busy
             if self._speaking_since is None:
                 self._speaking_since = now
             self._muted_until = now + self.echo_guard_s
@@ -161,7 +176,10 @@ class VoiceAgent:
         prob = self.vad(chunk)
         event = self.endpointer.push(chunk, prob)
         speech = prob >= self.endpointer.cfg.speech_prob
-        settled = speaking and now - self._speaking_since >= self.barge_in_grace_s
+        # Once per reply: talking on while a stopped reply winds down isn't
+        # another interruption.
+        settled = (speaking and now - self._speaking_since >= self.barge_in_grace_s
+                   and not self._cancel.is_set())
         self._voiced_run = self._voiced_run + 1 if speech and settled else 0
         if self._voiced_run >= self._barge_in_n:
             log.info("barge-in: stopping the reply")
@@ -177,6 +195,7 @@ class VoiceAgent:
         while (item := self._turns.get()) is not None:
             event, fired = item
             self._cancel = threading.Event()
+            self._audible = False
             self._replying.set()
             try:
                 m = TurnMetrics(endpoint_ms=(event.time_s - event.speech_end_s) * 1000,

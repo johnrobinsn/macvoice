@@ -12,22 +12,32 @@ On an M5 MacBook Pro, the voice pipeline uses **1.4 GB** (physical footprint, GP
 |---|---|---|
 | Voice activity | [Silero VAD](https://github.com/snakers4/silero-vad) v6 | ONNX Runtime (CPU) |
 | End of turn | [Smart Turn](https://github.com/pipecat-ai/smart-turn) v3.2 | ONNX Runtime (CPU) |
-| Speech to text | [Parakeet TDT 0.6B v2](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2), 8-bit | [MLX](https://github.com/senstella/parakeet-mlx) |
+| Speech to text | [Parakeet TDT 0.6B v2](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2), [8-bit](https://huggingface.co/johnrobinsn/parakeet-tdt-0.6b-v2-mlx-q8) | [MLX](https://github.com/senstella/parakeet-mlx) |
 | Text to speech | [Phonon 31M](https://huggingface.co/gradium/phonon-31m-en) English | ptts (Rust, Metal) |
 | Brain | any OpenAI-compatible server, or a coding agent over [ACP](https://agentclientprotocol.com) | |
 
 ## Quick start
 
-Needs an Apple Silicon Mac, [uv](https://docs.astral.sh/uv/), and ~2.7 GB for the first model download.
+Needs an Apple Silicon Mac and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 uv sync
+uv run macvoice download             # the models, 0.85 GB, once
+
 # In another terminal, a local LLM (optional; ~2.6 GB, fully offline):
 uvx --from mlx-lm mlx_lm.server --model mlx-community/Qwen3-4B-Instruct-2507-4bit --prompt-cache-size 1
 
 uv run macvoice run                  # talk to it
 uv run macvoice run --aec            # with echo cancellation: talk over it to interrupt
 ```
+
+After the download the voice pipeline runs offline. (`run` downloads anything still missing itself, so `download` is only there to get the wait out of the way first.) While it runs, the bottom line of the terminal shows what it's doing and how loud your mic is:
+
+```
+● hearing you  ▕██████████████▉         ▏
+```
+
+It goes `listening` → `hearing you` → `thinking` → `speaking`; each finished turn prints above it (`--no-status` turns it off).
 
 At startup it prints which brain it's using. By default that's the LLM server on `localhost:8080` if one is running; otherwise an "echo" brain that repeats what you say, so you can try the audio loop with no LLM at all.
 
@@ -111,7 +121,11 @@ uv run pytest -m "not models" # unit tests only, no model downloads
 
 Tests marked `devices` play sound and use the real mic and speaker to check echo cancellation, including a full live loop that is interrupted mid-reply; they're opt-in: `MACVOICE_DEVICE_TESTS=1 uv run pytest -m devices` (in a quiet room). macOS cancels any sound the Mac itself plays, so the "person" interrupting is mixed into the echo-cancelled mic signal; `MACVOICE_HUMAN_TESTS=1 ... -s` asks you to do it for real.
 
-Unit tests cover the endpointer, sentence splitting, the OpenAI-compatible client and brain selection (against a local SSE server), the ACP client (against a scripted fake agent), the live loop's half duplex, echo guard and barge-in rules, the streaming resampler for the voice-processing mic, and the NumPy feature ports (pinned to the PyTorch/transformers reference outputs). Tests marked `models` run the real models: Parakeet accuracy, Phonon → Parakeet round trips, the full loop on 32 spoken prompts, the 2 GB ceiling with no PyTorch, and Claude Code over ACP (skipped if `claude-agent-acp` isn't installed).
+Unit tests cover the model list and first-run download, the status line, the endpointer, sentence splitting, the OpenAI-compatible client and brain selection (against a local SSE server), the ACP client (against a scripted fake agent), the live loop's half duplex, echo guard and barge-in rules, the streaming resampler for the voice-processing mic, and the NumPy feature ports (pinned to the PyTorch/transformers reference outputs). Tests marked `models` run the real models: Parakeet accuracy, the published 8-bit Parakeet matching a local conversion (when the original checkpoint is cached), Phonon → Parakeet round trips, the full loop on 32 spoken prompts, the 2 GB ceiling with no PyTorch, and Claude Code over ACP (skipped if `claude-agent-acp` isn't installed).
+
+## Models
+
+Every model is pinned to a commit (Silero to a release tag plus its SHA-256). The published Parakeet checkpoint is fp32 and 2.3 GB; macvoice runs it in bf16 with the encoder quantized to 8 bits, so it downloads [that conversion](https://huggingface.co/johnrobinsn/parakeet-tdt-0.6b-v2-mlx-q8) (0.7 GB) instead. It is made by [`scripts/make_parakeet_q8.py`](scripts/make_parakeet_q8.py) with the same code macvoice falls back to if the copy can't be downloaded, and a `models` test checks the two are identical. Other `--precision` values download the original and convert it at load.
 
 ## Licenses
 
