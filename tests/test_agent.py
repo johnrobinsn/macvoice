@@ -124,6 +124,21 @@ def test_responder_skips_fragments_with_nothing_to_say(tail):
     assert m.reply == "That is a great idea!"
 
 
+def test_a_tts_failure_skips_that_sentence_not_the_reply(caplog):
+    class FlakyTTS(FakeTTS):
+        def stream(self, text):
+            if "noon" in text:
+                raise RuntimeError("synth exploded")
+            return super().stream(text)
+
+    tts, out = FlakyTTS(), CollectingOut()
+    m = Responder(FakeASR(), SpacedLLM(), tts).respond(np.zeros(10), out)
+    assert tts.spoken == ["Anything else?"]
+    assert len(out.chunks) == 3
+    assert m.reply == "Anything else?"            # only what was actually said
+    assert "TTS failed on 'It is noon right now.' (synth exploded)" in caplog.text
+
+
 def test_speech_end_to_first_audio_adds_the_stages():
     m = TurnMetrics(endpoint_ms=300, asr_ms=60, llm_first_sentence_ms=200, tts_first_audio_ms=5)
     assert m.speech_end_to_first_audio_ms == 565

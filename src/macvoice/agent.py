@@ -101,13 +101,20 @@ class Responder:
                     m.llm_first_sentence_ms = (time.perf_counter() - t_llm) * 1000
                 spoken.append(sentence)
                 t_tts = time.perf_counter()
-                for chunk in self.tts.stream(sentence):
-                    if cancel.is_set():
-                        break
-                    if m.tts_first_audio_ms is None:
-                        m.tts_first_audio_ms = (time.perf_counter() - t_tts) * 1000
-                    m.reply_audio_s += len(chunk) / self.tts.sample_rate
-                    out.write(chunk)
+                said = False
+                try:
+                    for chunk in self.tts.stream(sentence):
+                        if cancel.is_set():
+                            break
+                        if m.tts_first_audio_ms is None:
+                            m.tts_first_audio_ms = (time.perf_counter() - t_tts) * 1000
+                        m.reply_audio_s += len(chunk) / self.tts.sample_rate
+                        out.write(chunk)
+                        said = True
+                except Exception as e:  # noqa: BLE001 - one bad sentence shouldn't end the reply
+                    log.warning("TTS failed on %r (%s); skipping it", sentence, e)
+                    if not said:
+                        spoken.pop()
                 m.tts_synth_ms += (time.perf_counter() - t_tts) * 1000
         finally:
             m.cancelled = cancel.is_set()
