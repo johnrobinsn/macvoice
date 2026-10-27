@@ -93,6 +93,10 @@ class Responder:
             for sentence in sentences(self.llm.reply(self.history)):
                 if cancel.is_set():
                     break
+                if not any(ch.isalnum() for ch in sentence):
+                    # A trailing emoji or stray markdown ("😊", "**"): Phonon
+                    # refuses some of these and babbles over others.
+                    continue
                 if m.llm_first_sentence_ms is None:
                     m.llm_first_sentence_ms = (time.perf_counter() - t_llm) * 1000
                 spoken.append(sentence)

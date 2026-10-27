@@ -107,6 +107,23 @@ def test_responder_stops_when_cancelled():
     assert r.history[-1] == {"role": "assistant", "content": "It is noon right now."}
 
 
+@pytest.mark.parametrize("tail", ["😊", "**", "—", ":)"])
+def test_responder_skips_fragments_with_nothing_to_say(tail):
+    """Qwen sometimes ends a reply with an emoji; the splitter hands it over
+    alone, and Phonon raises on it, which used to kill the reply."""
+    class StrictTTS(FakeTTS):
+        def stream(self, text):
+            if not any(ch.isalnum() for ch in text):
+                raise ValueError("nothing to synthesize: the text is empty")
+            return super().stream(text)
+
+    tts = StrictTTS()
+    llm = SpacedLLM(f"That is a great idea! {tail}")
+    m = Responder(FakeASR(), llm, tts).respond(np.zeros(10), CollectingOut())
+    assert tts.spoken == ["That is a great idea!"]
+    assert m.reply == "That is a great idea!"
+
+
 def test_speech_end_to_first_audio_adds_the_stages():
     m = TurnMetrics(endpoint_ms=300, asr_ms=60, llm_first_sentence_ms=200, tts_first_audio_ms=5)
     assert m.speech_end_to_first_audio_ms == 565
