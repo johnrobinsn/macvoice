@@ -2,6 +2,8 @@
 
 A local voice agent loop for Apple Silicon in under 2 GB, with no PyTorch.
 
+The write-up: [A Local Voice Agent on a MacBook in Under 2 GB](https://www.storminthecastle.com/posts/mac_voice/).
+
 ```
  mic ──▶ Silero VAD ──▶ Smart Turn ──▶ Parakeet ──▶ your LLM ──▶ Phonon ──▶ speaker
 ```
@@ -112,7 +114,7 @@ UV_PROJECT_ENVIRONMENT=.venv-baseline uv sync --extra baseline
 uv run macvoice bench compare results/baseline.json results/new.json
 ```
 
-The results from the article (M5, 32 GB, macOS 26.6, on AC power) are in [`results/`](results/).
+The results from [the article](https://www.storminthecastle.com/posts/mac_voice/) (M5, 32 GB, macOS 26.6, on AC power) are in [`results/`](results/).
 
 ## Tests
 
