@@ -6,6 +6,7 @@ the agent is doing and how loud the microphone is.
     ● hearing you  ▕██████████▍           ▏
     ◐ thinking 0.4s
     ▶ speaking     (talk to interrupt)
+    ? allow?       say yes / no, or press y / n
 
 Turn summaries print above it (:meth:`StatusLine.print`). It only draws on
 a terminal; piped output gets the summaries alone.
@@ -30,6 +31,7 @@ STATES = {
     "hearing": ("●", "hearing you", "32"),
     "thinking": ("◐", "thinking", "33"),
     "speaking": ("▶", "speaking", "36"),
+    "asking": ("?", "allow?", "35"),
 }
 
 
@@ -52,6 +54,8 @@ def render(state: str, level_db: float, *, elapsed_s: float = 0.0, barge_in: boo
         tail = "(talk to interrupt)" if barge_in else "(mic muted while I talk)"
     elif state == "thinking":
         tail = ""
+    elif state == "asking":
+        tail = "say yes / no, or press y / n  " + meter(level_db)
     else:
         tail = meter(level_db)
     text = f"{icon} {label:<12} {tail}".rstrip()[: max(0, width - 1)]

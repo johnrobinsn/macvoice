@@ -123,12 +123,18 @@ def sentences(tokens: Iterable[str], min_chars: int = 12) -> Iterator[str]:
 
 def load(name: str | None = None, base_url: str | None = None, model: str | None = None,
          api_key: str | None = None, acp_command: str | None = None,
-         allow_tools: bool = False) -> tuple[LLM, str]:
+         allow_tools: bool = False, *, cwd: str | None = None, permissions: str | None = None,
+         mode: str | None = None) -> tuple[LLM, str]:
     """The brain, and a line saying what it is.
 
     ``name`` is "server" (any OpenAI-compatible endpoint, by default a local
     ``mlx_lm.server`` on port 8080), "echo" or "acp". When it isn't given,
     the local server is used if one is running, and echo otherwise.
+
+    For "acp": ``cwd`` is the project the agent works in (created if
+    missing); ``permissions`` is deny / allow / ask (default: ask with a
+    project, deny without; ``allow_tools`` means allow); ``mode`` is one of
+    the agent's own modes.
     """
     if name == "echo":
         return Echo(), "echo (repeats what you say)"
@@ -136,8 +142,15 @@ def load(name: str | None = None, base_url: str | None = None, model: str | None
         import shlex
 
         from macvoice.acp import ACPAgent
-        agent = ACPAgent(shlex.split(acp_command) if acp_command else None, allow_tools=allow_tools)
-        return agent, f"ACP agent: {' '.join(agent.command)}"
+        if permissions is None:
+            permissions = "allow" if allow_tools else ("ask" if cwd else "deny")
+        agent = ACPAgent(shlex.split(acp_command) if acp_command else None, cwd=cwd,
+                         permissions=permissions, mode=mode)
+        about = f"ACP agent: {' '.join(agent.command)}"
+        if cwd:
+            about += f"\n       working in {agent.cwd}"
+        about += f"\n       tool permissions: {permissions}" + (f", mode: {agent.mode}" if agent.mode else "")
+        return agent, about
     if name not in (None, "server", "openai"):  # "openai" is an older name for "server"
         raise ValueError(f"unknown LLM {name!r} (server | echo | acp)")
 

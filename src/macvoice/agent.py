@@ -11,6 +11,10 @@ case the user starting to talk stops the reply. Barge-in needs either
 headphones or echo cancellation (:mod:`macvoice.audio_mac`); otherwise on
 laptop speakers the mic hears the agent and it interrupts itself.
 
+:class:`VoiceAgent` can also ask the user a yes/no question mid-reply
+(:meth:`VoiceAgent.ask`, used for a coding agent's permission requests) and
+play a soft thinking tone while a slow reply has nothing to say yet.
+
 :func:`simulate` drives the same pieces from a recording with no devices,
 for benchmarks and tests.
 """
@@ -124,6 +128,30 @@ class Responder:
         return m
 
 
+class _SpeechOut:
+    """The output the responder writes speech to. The reply's first words
+    mark it audible and cut off the thinking tone."""
+
+    def __init__(self, agent: "VoiceAgent") -> None:
+        self.agent = agent
+
+    def write(self, audio: np.ndarray) -> None:
+        a = self.agent
+        with a._out_lock:
+            if a._toned:
+                a.out.stop()
+                a._toned = False
+            a._audible = True
+            a.out.write(audio)
+
+    def stop(self) -> None:
+        self.agent.out.stop()
+
+    @property
+    def busy(self) -> bool:
+        return self.agent.out.busy
+
+
 class VoiceAgent:
     """Live loop. ``feed`` takes 512-sample 16 kHz chunks from any thread;
     :meth:`run` wires it to the default microphone and speaker."""
@@ -132,7 +160,10 @@ class VoiceAgent:
                  responder: Responder, out: AudioOut, barge_in: bool = False,
                  echo_guard_s: float = 0.3, barge_in_ms: float = 250,
                  barge_in_grace_s: float = 0.5,
-                 on_turn: Callable[[TurnMetrics], None] | None = None) -> None:
+                 on_turn: Callable[[TurnMetrics], None] | None = None,
+                 thinking_tone: np.ndarray | None = None, thinking_tone_after_s: float = 1.2,
+                 on_note: Callable[[str], None] | None = None, keys=None,
+                 answer_timeout_s: float = 20.0) -> None:
         self.vad, self.endpointer, self.responder, self.out = vad, endpointer, responder, out
         self.barge_in, self.echo_guard_s = barge_in, echo_guard_s
         # Speech needed to stop a reply: longer than a turn start, so a cough
@@ -150,9 +181,23 @@ class VoiceAgent:
         self._muted_until = 0.0
         self.interruptions = 0  # barge-ins; a reply can be stopped after its metrics are reported
         self.level_db = -100.0  # the last mic chunk's level, dBFS (for the status line)
-        self._audible = False   # the current reply has played audio
+        self._audible = False   # the current reply has started speaking
+        self._speech_out = _SpeechOut(self)
+        self._out_lock = threading.Lock()
+        self.on_note = on_note or (lambda text: None)
+        # Questions (ask): answers arrive here from the mic or the keyboard.
+        self.keys, self.answer_timeout_s = keys, answer_timeout_s
+        self._asking = threading.Event()
+        self._answers: queue.Queue[tuple[str, object]] = queue.Queue()
+        self._closing = threading.Event()
+        # Thinking tone: one period at a time, while thinking past the delay.
+        self.thinking_tone, self.thinking_tone_after_s = thinking_tone, thinking_tone_after_s
+        self._thinking_since = 0.0
+        self._toned = False
         self._worker = threading.Thread(target=self._work, name="macvoice-responder", daemon=True)
         self._worker.start()
+        if thinking_tone is not None:
+            threading.Thread(target=self._tone_loop, name="macvoice-tone", daemon=True).start()
 
     @property
     def speaking(self) -> bool:
@@ -160,10 +205,15 @@ class VoiceAgent:
 
     @property
     def state(self) -> str:
-        """``speaking`` (reply audio playing), ``thinking`` (working on a
-        reply, nothing playing yet), ``hearing`` (in a turn) or
+        """``asking`` (waiting for a yes or no), ``speaking`` (reply audio
+        playing), ``thinking`` (working on a reply, nothing said yet; the
+        thinking tone may be playing), ``hearing`` (in a turn) or
         ``listening``. A reply stays ``speaking`` between its sentences."""
-        if self.out.busy or (self._replying.is_set() and self._audible):
+        if self._asking.is_set():
+            return "asking"
+        replying = self._replying.is_set()
+        tone_only = replying and self._toned and not self._audible  # the thinking tone isn't speech
+        if (self.out.busy and not tone_only) or (replying and self._audible):
             return "speaking"
         if self._replying.is_set():
             return "thinking"
@@ -172,9 +222,12 @@ class VoiceAgent:
     def feed(self, chunk: np.ndarray, now: float | None = None) -> TurnEvent | None:
         now = time.monotonic() if now is None else now
         self.level_db = float(20 * np.log10(np.sqrt(np.mean(np.square(chunk))) + 1e-5))
+        if self._asking.is_set():
+            return self._feed_answer(chunk, now)
         speaking = self.speaking  # read once: the worker thread changes it
         if speaking:
-            self._audible = self._audible or self.out.busy
+            # Output that isn't the thinking tone means the reply has spoken.
+            self._audible = self._audible or (self.out.busy and not self._toned)
             if self._speaking_since is None:
                 self._speaking_since = now
             self._muted_until = now + self.echo_guard_s
@@ -207,24 +260,122 @@ class VoiceAgent:
             event, fired = item
             self._cancel = threading.Event()
             self._audible = False
+            self._thinking_since = time.monotonic()
             self._replying.set()
             try:
                 m = TurnMetrics(endpoint_ms=(event.time_s - event.speech_end_s) * 1000,
                                 endpoint_reason=event.reason, p_complete=event.p_complete)
                 # Time the turn waited in the queue counts against the reply.
                 m.timeline["queued_ms"] = (time.monotonic() - fired) * 1000
-                self.responder.respond(event.audio, self.out, self._cancel, m)
+                self.responder.respond(event.audio, self._speech_out, self._cancel, m)
                 if self.on_turn:
                     self.on_turn(m)
             except Exception:
                 log.exception("reply failed")
             finally:
+                with self._out_lock:
+                    if self._toned:  # a reply that never spoke: don't leave the tone playing
+                        self.out.stop()
+                        self._toned = False
                 self._replying.clear()
 
+    # ── questions ─────────────────────────────────────────────────────
+
+    def _feed_answer(self, chunk: np.ndarray, now: float) -> TurnEvent | None:
+        """While a question is open: ignore the question itself (and its
+        echo), then take the next turn as the answer. No barge-in."""
+        if self.out.busy:
+            self._muted_until = now + self.echo_guard_s
+            return None
+        if now < self._muted_until:
+            return None
+        event = self.endpointer.push(chunk, self.vad(chunk))
+        if event is not None and event.kind == "end":
+            self._answers.put(("voice", event.audio))
+        return event
+
+    def ask(self, spoken: str, printed: str = "", retry: str = "Sorry, was that a yes or a no?") -> str | None:
+        """Ask a yes/no question and wait for the answer, from the reply
+        worker (a coding agent's permission request arrives mid-reply).
+        Returns ``allow``, ``always`` or ``reject``; ``None`` when nobody
+        answers in time. An unclear answer gets one retry, then declines."""
+        from macvoice.approval import KEYS, parse_answer
+
+        self._answers = queue.Queue()
+        self.endpointer.reset()
+        self._asking.set()
+        hint = "say yes or no, or press y / n" + (" / a (always)" if self.keys else "")
+        self.on_note(f"{printed or spoken}\n    ({hint})")
+        if self.keys is not None:
+            self.keys.start(lambda key: self._answers.put(("key", key)))
+        try:
+            for question in (spoken, retry):
+                self._say(question)
+                deadline = time.monotonic() + self.answer_timeout_s
+                while not self._closing.is_set():
+                    left = deadline - time.monotonic()
+                    if left <= 0:
+                        self.on_note("    no answer: declined")
+                        return None
+                    try:
+                        source, value = self._answers.get(timeout=min(left, 0.2))
+                    except queue.Empty:
+                        continue
+                    if source == "key":
+                        if value in KEYS:
+                            self.on_note(f"    {KEYS[value]} (key {value})")
+                            return KEYS[value]
+                        continue
+                    text = self.responder.asr.transcribe(value)
+                    answer = parse_answer(text)
+                    self.on_note(f"    you : {text}" + (f"  -> {answer}" if answer else "  -> unclear"))
+                    if answer:
+                        return answer
+                    break  # unclear: ask again (once)
+            return None
+        finally:
+            if self.keys is not None:
+                self.keys.stop()
+            self.endpointer.reset()
+            self._asking.clear()
+            self._thinking_since = time.monotonic()
+
+    def _say(self, text: str) -> None:
+        """Speak ``text`` and wait for it to finish playing."""
+        tts = self.responder.tts
+        if tts is None:
+            return
+        with self._out_lock:
+            if self._toned:
+                self.out.stop()
+                self._toned = False
+        try:
+            for chunk in tts.stream(text):
+                self.out.write(chunk)
+        except Exception as e:  # noqa: BLE001 - the printed question still stands
+            log.warning("couldn't speak the question (%s)", e)
+        end = time.monotonic() + 30
+        while self.out.busy and time.monotonic() < end and not self._closing.is_set():
+            time.sleep(0.02)
+
+    # ── thinking tone ─────────────────────────────────────────────────
+
+    def _tone_loop(self, tick_s: float = 0.05) -> None:
+        while not self._closing.wait(tick_s):
+            with self._out_lock:
+                if (self._replying.is_set() and not self._audible and not self._asking.is_set()
+                        and not self._cancel.is_set() and not self.out.busy
+                        and time.monotonic() - self._thinking_since >= self.thinking_tone_after_s):
+                    self.out.write(self.thinking_tone)
+                    self._toned = True
+
     def close(self) -> None:
+        self._closing.set()
         self._cancel.set()
         self._turns.put(None)
         self._worker.join(timeout=5)
+        if self.keys is not None:
+            self.keys.stop()
 
     def run(self, mic: "Mic", max_turns: int | None = None) -> None:  # pragma: no cover - devices
         """Blocking: microphone in until Ctrl-C, or until ``max_turns``

@@ -78,7 +78,21 @@ uv run macvoice run --llm acp
 uv run macvoice run --llm acp --acp-command "gemini --experimental-acp"
 ```
 
-ACP agents keep their own conversation. Tool-permission requests are declined unless you pass `--allow-tools`.
+ACP agents keep their own conversation. Without `--cwd`, the agent gets a scratch folder and every tool request is declined, so it acts as a chat brain.
+
+### Talk to a coding agent while it works
+
+Give the agent a project folder and it can read, edit and run things there. It tells you what it did in a sentence or two instead of reading code aloud.
+
+```bash
+uv run macvoice run --llm acp --cwd ~/demo-site                     # the folder is created if needed
+uv run macvoice run --llm acp --cwd ~/demo-site --mode acceptEdits  # edits go through; commands still ask
+uv run macvoice modes                                               # the agent's modes, for --mode
+```
+
+When the agent wants to run a tool, it asks out loud ("Claude wants to create the site folder. Allow?") and prints the exact command. Say yes or no, or press `y`, `n` or `a` (allow always). Anything unclear gets asked once more, then declined, and so does silence for 20 seconds. Nothing heard while the question is playing counts as an answer.
+
+`--permissions allow` approves every request without asking (only in a folder you don't mind losing), and `--permissions deny` declines them all. `--mode` takes any mode the agent advertises, by id or name, so it works with any ACP agent. While a slow reply hasn't started, a soft tone plays once a second so you know it's working (`--no-thinking-tone` turns it off).
 
 ### Other commands
 
@@ -125,7 +139,7 @@ uv run pytest -m "not models" # unit tests only, no model downloads
 
 Tests marked `devices` play sound and use the real mic and speaker to check echo cancellation, including a full live loop that is interrupted mid-reply; they're opt-in: `MACVOICE_DEVICE_TESTS=1 uv run pytest -m devices` (in a quiet room). macOS cancels any sound the Mac itself plays, so the "person" interrupting is mixed into the echo-cancelled mic signal; `MACVOICE_HUMAN_TESTS=1 ... -s` asks you to do it for real.
 
-Unit tests cover the model list and first-run download, the status line, the endpointer, sentence splitting, the OpenAI-compatible client and brain selection (against a local SSE server), the ACP client (against a scripted fake agent), the live loop's half duplex, echo guard and barge-in rules, the streaming resampler for the voice-processing mic, and the NumPy feature ports (pinned to the PyTorch/transformers reference outputs). Tests marked `models` run the real models: Parakeet accuracy, the published 8-bit Parakeet matching a local conversion (when the original checkpoint is cached), Phonon → Parakeet round trips, the full loop on 32 spoken prompts, the 2 GB ceiling with no PyTorch, and Claude Code over ACP (skipped if `claude-agent-acp` isn't installed).
+Unit tests cover the model list and first-run download, the status line, the endpointer, sentence splitting, the OpenAI-compatible client and brain selection (against a local SSE server), the ACP client, permission questions and modes (against a scripted fake agent), spoken and keyboard answers, the thinking tone, the live loop's half duplex, echo guard and barge-in rules, the streaming resampler for the voice-processing mic, and the NumPy feature ports (pinned to the PyTorch/transformers reference outputs). Tests marked `models` run the real models: Parakeet accuracy, the published 8-bit Parakeet matching a local conversion (when the original checkpoint is cached), Phonon → Parakeet round trips, the full loop on 32 spoken prompts, the 2 GB ceiling with no PyTorch, and Claude Code over ACP (skipped if `claude-agent-acp` isn't installed).
 
 ## Models
 

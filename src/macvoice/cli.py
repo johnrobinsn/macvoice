@@ -28,8 +28,17 @@ def _add_model_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--api-key", default=None)
     p.add_argument("--acp-command", default=None,
                    help='ACP agent command line, e.g. "gemini --experimental-acp" (default claude-agent-acp)')
-    p.add_argument("--allow-tools", action="store_true",
-                   help="let the ACP agent run tools it asks permission for (declined by default)")
+    p.add_argument("--allow-tools", action="store_true", help="same as --permissions allow")
+    p.add_argument("--cwd", default=None,
+                   help="with --llm acp: the folder the agent works in (created if it doesn't exist). "
+                        "Without it the agent gets a scratch folder and no tools")
+    p.add_argument("--permissions", default=None, choices=["ask", "allow", "deny"],
+                   help="with --llm acp, when the agent wants to run a tool: ask (out loud; answer by "
+                        "voice or y/n), allow everything, or deny everything. Default: ask with --cwd, "
+                        "else deny")
+    p.add_argument("--mode", default=None,
+                   help="with --llm acp: one of the agent's own modes, by id or name "
+                        "(see `macvoice modes`), e.g. acceptEdits for Claude Code")
     p.add_argument("--no-turn-detector", action="store_true",
                    help="end turns on silence alone (--max-silence-ms)")
     p.add_argument("--max-silence-ms", type=float, default=None,
@@ -60,7 +69,8 @@ def _build(args, need_tts: bool = True):
     endpointer = Endpointer(detector, EndpointConfig(max_silence_ms=max_silence, threshold=args.threshold))
     try:
         brain, about = llm.load(args.llm, args.base_url, args.model, args.api_key,
-                                args.acp_command, args.allow_tools)
+                                args.acp_command, args.allow_tools, cwd=args.cwd,
+                                permissions=args.permissions, mode=args.mode)
     except RuntimeError as e:
         sys.exit(f"macvoice: {e}")
     print(f"brain: {about}", flush=True)
@@ -130,8 +140,11 @@ def open_audio(args, rate: int, note=print):
 
 
 def cmd_run(args) -> None:
+    from macvoice.acp import ACPAgent
     from macvoice.agent import VoiceAgent
+    from macvoice.approval import KeyListener
     from macvoice.memory import footprint_mb, torch_loaded
+    from macvoice.tone import thinking_tone
 
     vad, endpointer, responder = _build(args)
     mic, out, barge_in, echo_guard_s, mode = open_audio(args, responder.tts.sample_rate)
@@ -140,16 +153,46 @@ def cmd_run(args) -> None:
     fp = footprint_mb()
     print(f"ready: footprint {fp:.0f} MB, torch loaded: {torch_loaded()}  ({mode})")
     print("Talk to me. Ctrl-C to quit.", flush=True)
-    agent = VoiceAgent(vad, endpointer, responder, out, barge_in=barge_in, echo_guard_s=echo_guard_s)
+    tone = None if args.no_thinking_tone else thinking_tone(responder.tts.sample_rate)
+    keys = KeyListener()
+    agent = VoiceAgent(vad, endpointer, responder, out, barge_in=barge_in, echo_guard_s=echo_guard_s,
+                       thinking_tone=tone, keys=keys if keys.enabled else None)
     # -v logs to the same terminal, which would tear the live line.
     status = StatusLine(lambda: (agent.state, agent.level_db), barge_in=barge_in,
                         enabled=False if args.no_status or args.verbose else None)
     agent.on_turn = lambda m: _print_turn(m, status.print)
+    agent.on_note = status.print
+    brain = responder.llm
+    if isinstance(brain, ACPAgent) and brain.permissions == "ask":
+        brain.ask = lambda request: agent.ask(request.spoken(), request.printed())
     status.start()
     try:
         agent.run(mic, max_turns=args.turns)
     finally:
         status.stop()
+
+
+def cmd_modes(args) -> None:
+    import shlex
+
+    from macvoice.acp import ACPAgent, ACPError
+
+    try:
+        agent = ACPAgent(shlex.split(args.acp_command) if args.acp_command else None,
+                         cwd=args.cwd, timeout=60)
+    except (OSError, ACPError) as e:
+        sys.exit(f"macvoice: couldn't start the ACP agent ({e})")
+    try:
+        if not agent.modes:
+            print(f"{' '.join(agent.command)} doesn't advertise any modes")
+            return
+        print(f"modes of {' '.join(agent.command)} (use with --mode):")
+        for m in agent.modes:
+            mark = "*" if m.get("id") == agent.mode else " "
+            desc = f"  {m['description']}" if m.get("description") else ""
+            print(f" {mark} {m.get('id')}  ({m.get('name', m.get('id'))}){desc}")
+    finally:
+        agent.close()
 
 
 def cmd_simulate(args) -> None:
@@ -228,7 +271,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--output-device", default=None)
     p.add_argument("--turns", type=int, default=None, help="exit after this many replies")
     p.add_argument("--no-status", action="store_true", help="no live status line, just the turn summaries")
+    p.add_argument("--no-thinking-tone", action="store_true",
+                   help="no soft tone while a slow reply hasn't started")
     p.set_defaults(fn=cmd_run)
+
+    p = sub.add_parser("modes", help="list an ACP agent's modes (for --mode)")
+    p.add_argument("--acp-command", default=None,
+                   help='ACP agent command line (default claude-agent-acp)')
+    p.add_argument("--cwd", default=None, help="folder to start the agent in")
+    p.set_defaults(fn=cmd_modes)
 
     p = sub.add_parser("download", help="download the models now (about 0.85 GB, once), "
                                         "so run starts listening right away")

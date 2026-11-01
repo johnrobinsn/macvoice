@@ -1,11 +1,17 @@
 """A scripted ACP agent for tests: speaks JSON-RPC on stdio like
 claude-agent-acp. Prompts containing "tool" ask permission first and report
-the outcome; "slow" streams forever until session/cancel; "die" exits."""
+the outcome; "slow" streams forever until session/cancel; "die" exits. It
+advertises three modes unless started with "nomodes"."""
 
 import json
 import sys
 
 LOG = sys.argv[1] if len(sys.argv) > 1 else None
+MODES = None if "nomodes" in sys.argv else {
+    "currentModeId": "default",
+    "availableModes": [{"id": "default", "name": "Default"},
+                       {"id": "acceptEdits", "name": "Accept Edits", "description": "edits go through"},
+                       {"id": "plan", "name": "Plan Mode"}]}
 
 
 def send(msg):
@@ -35,7 +41,9 @@ while (msg := read()) is not None:
     if method == "initialize":
         send({"id": mid, "result": {"protocolVersion": 1, "agentInfo": {"name": "fake"}}})
     elif method == "session/new":
-        send({"id": mid, "result": {"sessionId": "s1"}})
+        send({"id": mid, "result": {"sessionId": "s1", **({"modes": MODES} if MODES else {})}})
+    elif method == "session/set_mode":
+        send({"id": mid, "result": {}})
     elif method == "session/prompt":
         text = params["prompt"][0]["text"]
         sid = params["sessionId"]
@@ -45,7 +53,8 @@ while (msg := read()) is not None:
             "sessionUpdate": "agent_thought_chunk", "content": {"type": "text", "text": "hmm"}}}})
         if "tool" in text:
             send({"id": 900, "method": "session/request_permission", "params": {
-                "sessionId": sid, "toolCall": {"title": "Bash: ls"},
+                "sessionId": sid, "toolCall": {"title": "`npm install`", "kind": "execute",
+                                               "rawInput": {"command": "npm install"}},
                 "options": [{"optionId": "yes", "kind": "allow_once", "name": "Allow"},
                             {"optionId": "no", "kind": "reject_once", "name": "Reject"}]}})
             answer = read()

@@ -321,3 +321,169 @@ def test_agent_reports_the_mic_level():
     agent.feed(np.zeros(CHUNK, dtype=np.float32), now=0.1)
     assert agent.level_db == pytest.approx(-100, abs=1)
     agent.close()
+
+
+# ── questions (permission requests) ──────────────────────────────────
+
+def asking_agent(asr_text="yes please", keys=None, timeout_s=2.0):
+    out = FakeOut()
+    notes = []
+    agent = VoiceAgent(energy_vad, Endpointer(None, EndpointConfig(max_silence_ms=300)),
+                       Responder(FakeASR(asr_text), SpacedLLM(), FakeTTS()), out,
+                       echo_guard_s=0.3, on_note=notes.append, keys=keys, answer_timeout_s=timeout_s)
+    return agent, out, notes
+
+
+def ask_in_background(agent, *args):
+    result = {}
+    t = threading.Thread(target=lambda: result.setdefault("answer", agent.ask(*args)))
+    t.start()
+    assert wait_for(lambda: agent.state == "asking")
+    return t, result
+
+
+def test_ask_speaks_the_question_and_takes_a_spoken_answer():
+    agent, out, notes = asking_agent("Yes, go ahead.")
+    t, result = ask_in_background(agent, "Claude wants to run ls. Allow?", "? Claude wants to use ls")
+    assert agent.responder.tts.spoken == ["Claude wants to run ls. Allow?"]
+    speak(agent, 0.5, 10.0)
+    speak(agent, 0.5, 10.5, loud=False)
+    t.join(2)
+    assert result["answer"] == "allow"
+    assert notes[0].startswith("? Claude wants to use ls") and "you : Yes, go ahead." in notes[1]
+    assert agent.state == "listening"
+    agent.close()
+
+
+def test_ask_ignores_what_it_hears_while_the_question_plays():
+    agent, out, notes = asking_agent("yes")
+    out._busy = True                                       # the question is still playing
+    t, result = ask_in_background(agent, "Allow?")
+    speak(agent, 0.5, 10.0)                                # its own voice, leaking back
+    speak(agent, 0.5, 10.5, loud=False)
+    assert "answer" not in result
+    out._busy = False
+    speak(agent, 0.5, 20.0)
+    speak(agent, 0.5, 20.5, loud=False)
+    t.join(2)
+    assert result["answer"] == "allow"
+    agent.close()
+
+
+class FakeKeys:
+    def __init__(self):
+        self.on_key, self.stopped = None, 0
+
+    def start(self, on_key):
+        self.on_key = on_key
+
+    def stop(self):
+        self.stopped += 1
+
+
+@pytest.mark.parametrize("key, answer", [("y", "allow"), ("n", "reject"), ("a", "always")])
+def test_ask_takes_a_key(key, answer):
+    keys = FakeKeys()
+    agent, out, notes = asking_agent(keys=keys)
+    t, result = ask_in_background(agent, "Allow?")
+    keys.on_key("x")                                       # not an answer: ignored
+    keys.on_key(key)
+    t.join(2)
+    assert result["answer"] == answer and keys.stopped >= 1
+    agent.close()
+
+
+def test_an_unclear_answer_is_asked_again_then_declined():
+    agent, out, notes = asking_agent("banana", timeout_s=0.5)
+    t, result = ask_in_background(agent, "Allow?")
+    speak(agent, 0.5, 10.0)
+    speak(agent, 0.5, 10.5, loud=False)
+    t.join(3)
+    assert result["answer"] is None
+    assert agent.responder.tts.spoken == ["Allow?", "Sorry, was that a yes or a no?"]
+    assert "unclear" in " ".join(notes) and "no answer: declined" in notes[-1]
+    agent.close()
+
+
+def test_a_permission_request_mid_reply_is_answered_by_voice():
+    """End to end: the brain asks permission while replying; the user's
+    spoken answer goes back, then the reply carries on."""
+    from macvoice.acp import ALLOW
+
+    class AskingLLM(SpacedLLM):
+        def reply(self, history):
+            self.histories.append(history)
+            decision = agent.ask("The agent wants to run ls. Allow?")
+            yield f"You said {'yes' if decision == ALLOW else 'no'}. Done now."
+
+    out = FakeOut()
+    done = threading.Event()
+    asr = FakeASR("list the files")
+    agent = VoiceAgent(energy_vad, Endpointer(None, EndpointConfig(max_silence_ms=300)),
+                       Responder(asr, AskingLLM(), FakeTTS()), out, echo_guard_s=0.3,
+                       on_turn=lambda m: done.set())
+    t = speak(agent, 0.5, 0.0)
+    speak(agent, 0.5, t, loud=False)                       # the request
+    assert wait_for(lambda: agent.state == "asking")
+    asr.text = "yes"
+    t = speak(agent, 0.5, 10.0)
+    speak(agent, 0.5, t, loud=False)                       # the answer
+    assert done.wait(2)
+    assert agent.responder.tts.spoken[-2:] == ["You said yes.", "Done now."]
+    agent.close()
+
+
+# ── thinking tone ─────────────────────────────────────────────────────
+
+def test_thinking_tone_plays_while_waiting_and_stops_for_speech():
+    from macvoice.tone import thinking_tone
+
+    gate = threading.Event()
+
+    class SlowLLM(SpacedLLM):
+        def reply(self, history):
+            gate.wait(2)
+            yield from super().reply(history)
+
+    out, done = FakeOut(), threading.Event()
+    tone_audio = thinking_tone(24000, period_s=0.2)
+    agent = VoiceAgent(energy_vad, Endpointer(None, EndpointConfig(max_silence_ms=300)),
+                       Responder(FakeASR(), SlowLLM(), FakeTTS()), out, echo_guard_s=0.3,
+                       on_turn=lambda m: done.set(), thinking_tone=tone_audio, thinking_tone_after_s=0.05)
+    t = speak(agent, 0.5, 0.0)
+    speak(agent, 0.5, t, loud=False)
+    assert wait_for(lambda: len(out.chunks) >= 2)          # tone periods, nothing said yet
+    assert all(len(c) == len(tone_audio) for c in out.chunks)
+    assert agent.state == "thinking"
+    stops = out.stopped
+    gate.set()
+    assert done.wait(2)
+    assert out.stopped == stops + 1                        # speech cut the tone off
+    n = len(out.chunks)
+    time.sleep(0.2)
+    assert len(out.chunks) == n                            # and it doesn't come back
+    agent.close()
+
+
+def test_no_tone_for_quick_replies():
+    from macvoice.tone import thinking_tone
+
+    out, done = FakeOut(), threading.Event()
+    agent = VoiceAgent(energy_vad, Endpointer(None, EndpointConfig(max_silence_ms=300)),
+                       Responder(FakeASR(), SpacedLLM(), FakeTTS()), out, echo_guard_s=0.3,
+                       on_turn=lambda m: done.set(), thinking_tone=thinking_tone(24000),
+                       thinking_tone_after_s=5.0)
+    t = speak(agent, 0.5, 0.0)
+    speak(agent, 0.5, t, loud=False)
+    assert done.wait(2)
+    assert all(len(c) == 2400 for c in out.chunks)         # speech only
+    agent.close()
+
+
+def test_thinking_tone_is_quiet_and_click_free():
+    from macvoice.tone import thinking_tone
+
+    t = thinking_tone(24000)
+    assert len(t) == 24000 and t.dtype == np.float32
+    assert 20 * np.log10(np.abs(t).max()) == pytest.approx(-32, abs=0.5)
+    assert abs(t[0]) < 1e-4 and abs(t[int(0.12 * 24000) - 1]) < 1e-3   # fades in and out

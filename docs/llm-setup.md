@@ -87,7 +87,7 @@ npm install -g @agentclientprotocol/claude-agent-acp
 uv run macvoice run --llm acp
 ```
 
-The agent runs in `~/.cache/macvoice/acp` and keeps its own conversation history. When it asks permission to run a tool, macvoice declines unless you pass `--allow-tools`; think twice before letting a voice command edit files.
+The agent keeps its own conversation history. By default it runs in a scratch folder (`~/.cache/macvoice/acp`) and macvoice declines every tool request. To have it work on a project, pass `--cwd ~/some/folder`: it then asks you out loud before running a tool, and you answer by voice or with `y`/`n`. See [Talk to a coding agent while it works](../README.md#talk-to-a-coding-agent-while-it-works) for `--permissions` and `--mode`.
 
 Other ACP agents work the same way: `--acp-command "gemini --experimental-acp"`, for example.
 
