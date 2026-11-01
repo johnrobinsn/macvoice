@@ -18,6 +18,14 @@ On an M5 MacBook Pro, the voice pipeline uses **1.4 GB** (physical footprint, GP
 | Text to speech | [Phonon 31M](https://huggingface.co/gradium/phonon-31m-en) English | ptts (Rust, Metal) |
 | Brain | any OpenAI-compatible server, or a coding agent over [ACP](https://agentclientprotocol.com) | |
 
+> **New: talk to Claude Code while it works.** Point macvoice at a project folder and drive Claude Code (or any [ACP](https://agentclientprotocol.com) coding agent) by voice. It asks out loud before running commands, you answer "yes" or "no", and you can talk over it to change direction:
+>
+> ```bash
+> uv run macvoice run --llm acp --cwd ~/demo-site
+> ```
+>
+> See [Talk to a coding agent while it works](#talk-to-a-coding-agent-while-it-works).
+
 ## Quick start
 
 Needs an Apple Silicon Mac and [uv](https://docs.astral.sh/uv/).
@@ -38,7 +46,7 @@ After the download the voice pipeline runs offline. (`run` downloads anything st
 ● hearing you  ▕██████████████▉         ▏
 ```
 
-It goes `listening` → `hearing you` → `thinking` → `speaking`; each finished turn prints above it (`--no-status` turns it off).
+It goes `listening` → `hearing you` → `thinking` → `speaking`, plus `allow?` while a coding agent waits for your answer to a permission question. Each finished turn prints above it (`--no-status` turns it off).
 
 At startup it prints which brain it's using. By default that's the LLM server on `localhost:8080` if one is running; otherwise an "echo" brain that repeats what you say, so you can try the audio loop with no LLM at all.
 
@@ -92,7 +100,16 @@ uv run macvoice modes                                               # the agent'
 
 When the agent wants to run a tool, it asks out loud ("Claude wants to create the site folder. Allow?") and prints the exact command. Say yes or no, or press `y`, `n` or `a` (allow always). Anything unclear gets asked once more, then declined, and so does silence for 20 seconds. Nothing heard while the question is playing counts as an answer.
 
-`--permissions allow` approves every request without asking (only in a folder you don't mind losing), and `--permissions deny` declines them all. `--mode` takes any mode the agent advertises, by id or name, so it works with any ACP agent. While a slow reply hasn't started, a soft tone plays once a second so you know it's working (`--no-thinking-tone` turns it off).
+`--permissions allow` approves every request without asking, and `--permissions deny` declines them all. `--mode` takes any mode the agent advertises, by id or name, so it works with any ACP agent. While a slow reply hasn't started, a soft tone plays once a second so you know it's working (`--no-thinking-tone` turns it off).
+
+Caveats:
+
+- **The agent really runs things.** With `--permissions allow`, or a mode such as `bypassPermissions`, it runs commands and edits files without asking. Use those only in a folder you don't mind losing. In `acceptEdits` mode, file edits go through without asking; commands still ask.
+- **Coding agents are slow to start talking.** The voice pipeline answers in about 350 ms, but Claude Code took 3–4.5 s to start replying to simple requests in testing, and longer when it's reading files or running commands. That's what the thinking tone is for.
+- **One-word answers are near the floor.** A turn needs 250 ms of speech, and a quick "no" can fall under it. A missed answer is asked again, and silence declines. The keys always work.
+- **"Always" is up to the agent.** macvoice passes the agent's own "allow always" option back; how long that lasts (this session, this folder) is the agent's rule, not macvoice's.
+- **Tested with Claude Code** (`claude-agent-acp`). Other ACP agents should work, since modes and permission requests are part of the protocol, but their modes and request details differ.
+- **The agent may be cut off mid-change.** Talking over a reply cancels the agent's turn (`session/cancel`), possibly partway through a multi-step change. Ask it what state things are in.
 
 ### Other commands
 
@@ -102,6 +119,7 @@ uv run macvoice transcribe a.wav b.wav                 # Parakeet only
 uv run macvoice say "Hello there" [-o hello.wav]       # Phonon only
 uv run macvoice run --voice Harper                     # a Phonon catalog voice
 uv run macvoice run --turns 3                          # exit after three replies
+uv run macvoice modes [--acp-command "..."]            # an ACP agent's modes, for --mode
 ```
 
 Each turn prints where the time went:
