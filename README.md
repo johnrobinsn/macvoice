@@ -18,7 +18,7 @@ On an M5 MacBook Pro, the voice pipeline uses **1.4 GB** (physical footprint, GP
 | Text to speech | [Phonon 31M](https://huggingface.co/gradium/phonon-31m-en) English | ptts (Rust, Metal) |
 | Brain | any OpenAI-compatible server, or a coding agent over [ACP](https://agentclientprotocol.com) | |
 
-> **New: talk to Claude Code while it works.** Point macvoice at a project folder and drive Claude Code (or any [ACP](https://agentclientprotocol.com) coding agent) by voice. It asks out loud before running commands, you answer "yes" or "no", and you can talk over it to change direction:
+> **New: talk to Claude Code while it works.** Point macvoice at a project folder and drive Claude Code (or any [ACP](https://agentclientprotocol.com) coding agent) by voice. It asks out loud before running commands, you answer "yes" or "no", and you can talk over it to change direction, or type when that's easier:
 >
 > ```bash
 > uv run macvoice run --llm acp --cwd ~/demo-site
@@ -47,6 +47,21 @@ After the download the voice pipeline runs offline. (`run` downloads anything st
 ```
 
 It goes `listening` → `hearing you` → `thinking` → `speaking`, plus `allow?` while a coding agent waits for your answer to a permission question. Each finished turn prints above it (`--no-status` turns it off).
+
+### Type or talk
+
+`run` also gives you an input box, so you can type a prompt instead of saying it. Typed and spoken prompts go to the same conversation, and replies are rendered as markdown (code blocks and markdown symbols are left out of what's spoken).
+
+| Key | |
+|---|---|
+| Enter | send |
+| Shift+Enter, Option+Enter, Ctrl+J, or `\` then Enter | new line |
+| Up / Down, Ctrl+R | earlier prompts (kept across runs), search them |
+| Ctrl+C | clear the line; or stop the reply; twice to quit |
+| Esc | stop the reply |
+| y / n / a | answer a permission question (when the line is empty) |
+
+Commands: `/mute` (replies as text only), `/modes` and `/mode NAME` (an ACP agent's modes), `/help`, `/quit`. Shift+Enter works in terminals that support the kitty keyboard protocol (Ghostty, kitty, WezTerm, iTerm2); in Terminal.app use Option+Enter (with "Use Option as Meta key" on) or Ctrl+J. `--no-console` goes back to voice only.
 
 At startup it prints which brain it's using. By default that's the LLM server on `localhost:8080` if one is running; otherwise an "echo" brain that repeats what you say, so you can try the audio loop with no LLM at all.
 
@@ -118,7 +133,7 @@ uv run macvoice simulate recording.wav -o reply.wav   # run a recording through 
 uv run macvoice transcribe a.wav b.wav                 # Parakeet only
 uv run macvoice say "Hello there" [-o hello.wav]       # Phonon only
 uv run macvoice run --voice Harper                     # a Phonon catalog voice
-uv run macvoice run --turns 3                          # exit after three replies
+uv run macvoice run --turns 3                          # exit after three replies (voice only)
 uv run macvoice modes [--acp-command "..."]            # an ACP agent's modes, for --mode
 ```
 
@@ -157,7 +172,7 @@ uv run pytest -m "not models" # unit tests only, no model downloads
 
 Tests marked `devices` play sound and use the real mic and speaker to check echo cancellation, including a full live loop that is interrupted mid-reply; they're opt-in: `MACVOICE_DEVICE_TESTS=1 uv run pytest -m devices` (in a quiet room). macOS cancels any sound the Mac itself plays, so the "person" interrupting is mixed into the echo-cancelled mic signal; `MACVOICE_HUMAN_TESTS=1 ... -s` asks you to do it for real.
 
-Unit tests cover the model list and first-run download, the status line, the endpointer, sentence splitting, the OpenAI-compatible client and brain selection (against a local SSE server), the ACP client, permission questions and modes (against a scripted fake agent), spoken and keyboard answers, the thinking tone, the live loop's half duplex, echo guard and barge-in rules, the streaming resampler for the voice-processing mic, and the NumPy feature ports (pinned to the PyTorch/transformers reference outputs). Tests marked `models` run the real models: Parakeet accuracy, the published 8-bit Parakeet matching a local conversion (when the original checkpoint is cached), Phonon → Parakeet round trips, the full loop on 32 spoken prompts, the 2 GB ceiling with no PyTorch, and Claude Code over ACP (skipped if `claude-agent-acp` isn't installed).
+Unit tests cover the model list and first-run download, the status line, the endpointer, sentence splitting, the OpenAI-compatible client and brain selection (against a local SSE server), the ACP client, permission questions and modes (against a scripted fake agent), spoken and keyboard answers, the thinking tone, the console's keys and commands (through a pipe), what the voice leaves out of markdown, the live loop's half duplex, echo guard and barge-in rules, the streaming resampler for the voice-processing mic, and the NumPy feature ports (pinned to the PyTorch/transformers reference outputs). Tests marked `models` run the real models: Parakeet accuracy, the published 8-bit Parakeet matching a local conversion (when the original checkpoint is cached), Phonon → Parakeet round trips, the full loop on 32 spoken prompts, the 2 GB ceiling with no PyTorch, and Claude Code over ACP (skipped if `claude-agent-acp` isn't installed).
 
 ## Models
 

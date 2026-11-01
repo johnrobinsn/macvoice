@@ -14,6 +14,8 @@ dependencies = [
     "ptts>=0.4",
     "sounddevice>=0.4.7",
     "pyobjc-framework-avfoundation>=10 ; sys_platform == 'darwin'",
+    "prompt-toolkit>=3.0.43",
+    "rich>=13",
 ]
 
 [project.optional-dependencies]

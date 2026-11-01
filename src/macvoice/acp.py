@@ -136,6 +136,10 @@ class ACPAgent:
         if self.permissions not in PERMISSIONS:
             raise ValueError(f"permissions must be one of {', '.join(PERMISSIONS)}")
         self.ask, self.timeout = ask, timeout
+        # Tool activity as one-line summaries ("▸ Edit index.html"), for the console.
+        self.on_activity: Callable[[str], None] | None = None
+        self._tool_titles: dict[str, str] = {}
+        self._prompt_req: int | None = None
         # Without a project, a neutral working directory, so the agent
         # doesn't pick up whatever you launched from (CLAUDE.md, git, ...).
         self.coding = cwd is not None if coding is None else coding
@@ -264,6 +268,7 @@ class ACPAgent:
             self._first_turn = False
         req = self._request("session/prompt", {"sessionId": self.session_id,
                                                "prompt": [{"type": "text", "text": text}]})
+        self._prompt_req = req
         done = False
         try:
             for msg in self._messages(req):
@@ -271,11 +276,15 @@ class ACPAgent:
                     done = True
                     return
                 update = (msg.get("params") or {}).get("update") or {}
-                if update.get("sessionUpdate") == "agent_message_chunk":
+                kind = update.get("sessionUpdate")
+                if kind == "agent_message_chunk":
                     content = update.get("content") or {}
                     if content.get("type") == "text" and content.get("text"):
                         yield content["text"]
+                elif kind in ("tool_call", "tool_call_update"):
+                    self._report_tool(update)
         finally:
+            self._prompt_req = None
             if not done and self._proc.poll() is None:  # barge-in: stop the agent's turn
                 try:
                     self._send({"method": "session/cancel", "params": {"sessionId": self.session_id}})
@@ -283,6 +292,33 @@ class ACPAgent:
                     return
                 for _ in self._drain(req):
                     pass
+
+    def cancel(self) -> None:
+        """Ask the agent to stop the current turn, from any thread. The
+        turn then ends with ``stopReason: cancelled``, which also unblocks a
+        reply that's waiting on a silent tool."""
+        if self._prompt_req is not None and self._proc.poll() is None:
+            try:
+                self._send({"method": "session/cancel", "params": {"sessionId": self.session_id}})
+            except OSError:
+                pass
+
+    def _report_tool(self, update: dict) -> None:
+        """One line when a tool starts and one when it finishes."""
+        tool_id = str(update.get("toolCallId", ""))
+        if update.get("title"):
+            self._tool_titles[tool_id] = str(update["title"]).replace("`", "")
+        title = self._tool_titles.get(tool_id, "tool")
+        status = update.get("status")
+        line = None
+        if update.get("sessionUpdate") == "tool_call":
+            line = f"  ▸ {title}"
+        elif status == "completed":
+            line = f"  ✓ {title}"
+        elif status == "failed":
+            line = f"  ✗ {title} (failed)"
+        if line and self.on_activity is not None:
+            self.on_activity(line)
 
     def _drain(self, req: int) -> Iterator[dict]:
         try:

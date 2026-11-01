@@ -81,20 +81,12 @@ def _build(args, need_tts: bool = True):
 
 
 def _print_turn(m, emit=print) -> None:
-    total = m.speech_end_to_first_audio_ms
+    from macvoice.status import timing
+
     lines = ["", f"  you : {m.transcript}"]
     if m.reply:
         lines.append(f"  bot : {m.reply}")
-    parts = [f"endpoint {m.endpoint_ms:.0f} ms ({m.endpoint_reason}"
-             + (f", p={m.p_complete:.2f})" if m.p_complete is not None else ")"),
-             f"asr {m.asr_ms:.0f} ms"]
-    if m.llm_first_sentence_ms is not None:
-        parts.append(f"llm {m.llm_first_sentence_ms:.0f} ms")
-    if m.tts_first_audio_ms is not None:
-        parts.append(f"tts {m.tts_first_audio_ms:.0f} ms")
-    if total is not None:
-        parts.append(f"=> first audio {total:.0f} ms after you stopped")
-    lines.append("        " + " | ".join(parts))
+    lines.append("        " + timing(m))
     emit("\n".join(lines))
 
 
@@ -152,8 +144,14 @@ def cmd_run(args) -> None:
 
     fp = footprint_mb()
     print(f"ready: footprint {fp:.0f} MB, torch loaded: {torch_loaded()}  ({mode})")
-    print("Talk to me. Ctrl-C to quit.", flush=True)
     tone = None if args.no_thinking_tone else thinking_tone(responder.tts.sample_rate)
+    brain = responder.llm
+    # The console (type or talk) needs a terminal; --turns keeps the plain
+    # loop, which can stop by itself.
+    if not args.no_console and args.turns is None and sys.stdin.isatty() and sys.stdout.isatty():
+        _run_console(args, vad, endpointer, responder, mic, out, barge_in, echo_guard_s, tone)
+        return
+    print("Talk to me. Ctrl-C to quit.", flush=True)
     keys = KeyListener()
     agent = VoiceAgent(vad, endpointer, responder, out, barge_in=barge_in, echo_guard_s=echo_guard_s,
                        thinking_tone=tone, keys=keys if keys.enabled else None)
@@ -162,7 +160,6 @@ def cmd_run(args) -> None:
                         enabled=False if args.no_status or args.verbose else None)
     agent.on_turn = lambda m: _print_turn(m, status.print)
     agent.on_note = status.print
-    brain = responder.llm
     if isinstance(brain, ACPAgent) and brain.permissions == "ask":
         brain.ask = lambda request: agent.ask(request.spoken(), request.printed())
     status.start()
@@ -170,6 +167,34 @@ def cmd_run(args) -> None:
         agent.run(mic, max_turns=args.turns)
     finally:
         status.stop()
+
+
+def _run_console(args, vad, endpointer, responder, mic, out, barge_in, echo_guard_s, tone) -> None:
+    from macvoice.acp import ACPAgent
+    from macvoice.agent import VoiceAgent
+    from macvoice.console import Console
+    from macvoice.status import StatusLine
+
+    agent = VoiceAgent(vad, endpointer, responder, out, barge_in=barge_in, echo_guard_s=echo_guard_s,
+                       thinking_tone=tone)
+    status = StatusLine(lambda: (agent.state, agent.level_db), barge_in=barge_in, enabled=False,
+                        color=True)
+    brain = responder.llm
+    console = Console(agent, brain=brain, status=None if args.no_status else status)
+    agent.keys = console.keys
+    agent.on_turn = console.print_turn
+    agent.on_note = print
+    if isinstance(brain, ACPAgent):
+        brain.on_activity = console.activity
+        if brain.permissions == "ask":
+            brain.ask = lambda request: agent.ask(request.spoken(), request.printed())
+    print("Type or talk. Enter sends, Ctrl-C stops a reply (twice quits), /help for more.", flush=True)
+    agent.listen(mic)
+    try:
+        console.run()
+    finally:
+        agent.close()
+        mic.close()
 
 
 def cmd_modes(args) -> None:
@@ -273,6 +298,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-status", action="store_true", help="no live status line, just the turn summaries")
     p.add_argument("--no-thinking-tone", action="store_true",
                    help="no soft tone while a slow reply hasn't started")
+    p.add_argument("--no-console", action="store_true",
+                   help="voice only: no input box for typing prompts")
     p.set_defaults(fn=cmd_run)
 
     p = sub.add_parser("modes", help="list an ACP agent's modes (for --mode)")

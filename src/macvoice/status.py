@@ -74,10 +74,12 @@ class StatusLine:
 
     def __init__(self, source: Callable[[], tuple[str, float]], *, barge_in: bool = False,
                  stream: TextIO = sys.stdout, fps: float = 15, decay_db_s: float = 40,
-                 enabled: bool | None = None) -> None:
+                 enabled: bool | None = None, color: bool | None = None) -> None:
         self.source, self.barge_in, self.stream = source, barge_in, stream
         self.enabled = stream.isatty() if enabled is None else enabled
-        self.color = self.enabled and "NO_COLOR" not in os.environ
+        # The console draws line() in its toolbar, so color can be on while
+        # this class draws nothing itself.
+        self.color = (self.enabled if color is None else color) and "NO_COLOR" not in os.environ
         self._period = 1 / fps
         self._decay = decay_db_s
         self._level = FLOOR_DB
@@ -131,3 +133,21 @@ class StatusLine:
         while not self._stop.wait(self._period):
             with self._lock:
                 self._draw()
+
+
+def timing(m) -> str:
+    """Where a turn's time went, on one line. Typed turns have no endpoint
+    or ASR stage."""
+    parts = []
+    if not m.typed:
+        parts.append(f"endpoint {m.endpoint_ms:.0f} ms ({m.endpoint_reason}"
+                     + (f", p={m.p_complete:.2f})" if m.p_complete is not None else ")"))
+        parts.append(f"asr {m.asr_ms:.0f} ms")
+    if m.llm_first_sentence_ms is not None:
+        parts.append(f"llm {m.llm_first_sentence_ms:.0f} ms")
+    if m.tts_first_audio_ms is not None:
+        parts.append(f"tts {m.tts_first_audio_ms:.0f} ms")
+    total = m.speech_end_to_first_audio_ms
+    if total is not None:
+        parts.append(f"=> first audio {total:.0f} ms after you " + ("pressed Enter" if m.typed else "stopped"))
+    return " | ".join(parts)

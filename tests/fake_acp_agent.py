@@ -1,6 +1,7 @@
 """A scripted ACP agent for tests: speaks JSON-RPC on stdio like
 claude-agent-acp. Prompts containing "tool" ask permission first and report
-the outcome; "slow" streams forever until session/cancel; "die" exits. It
+the outcome; "slow" streams forever until session/cancel; "freeze" sends nothing until
+session/cancel; "edit" reports tool calls; "die" exits. It
 advertises three modes unless started with "nomodes"."""
 
 import json
@@ -60,6 +61,20 @@ while (msg := read()) is not None:
             answer = read()
             log(answer)
             chunk(sid, f"Permission {answer['result']['outcome'].get('optionId')}. ")
+        if "edit" in text:
+            for update in ({"sessionUpdate": "tool_call", "toolCallId": "t1", "title": "Edit `index.html`",
+                            "kind": "edit", "status": "pending"},
+                           {"sessionUpdate": "tool_call_update", "toolCallId": "t1", "status": "in_progress"},
+                           {"sessionUpdate": "tool_call_update", "toolCallId": "t1", "status": "completed"},
+                           {"sessionUpdate": "tool_call", "toolCallId": "t2", "title": "npm test",
+                            "kind": "execute"},
+                           {"sessionUpdate": "tool_call_update", "toolCallId": "t2", "status": "failed"}):
+                send({"method": "session/update", "params": {"sessionId": sid, "update": update}})
+        if "freeze" in text:                      # a long silent tool: nothing until session/cancel
+            cancel = read()
+            log(cancel)
+            send({"id": mid, "result": {"stopReason": "cancelled"}})
+            continue
         if "slow" in text:
             n = 0
             while True:

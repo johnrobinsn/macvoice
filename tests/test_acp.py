@@ -215,3 +215,32 @@ def test_modes_command(agent_log, tmp_path, capsys):
     cli.main(["modes", "--acp-command", f"{sys.executable} {FAKE} {agent_log}", "--cwd", str(tmp_path)])
     out = capsys.readouterr().out
     assert "* default" in out and "acceptEdits  (Accept Edits)  edits go through" in out
+
+
+# ── console support: cancel from another thread, tool activity ───────
+
+def test_cancel_stops_a_turn_waiting_on_a_silent_tool(agent_log, tmp_path):
+    import threading
+    agent = make(agent_log, tmp_path)
+    result = []
+    t = threading.Thread(target=lambda: result.append("".join(agent.reply(user("freeze")))))
+    t.start()
+    deadline = __import__("time").monotonic() + 2
+    while agent._prompt_req is None and __import__("time").monotonic() < deadline:
+        pass
+    agent.cancel()
+    t.join(2)
+    assert result == [""] and not t.is_alive()
+    assert any(m.get("method") == "session/cancel" for m in logged(agent_log))
+    agent.cancel()                                         # nothing in flight: a no-op
+    assert "Paris" in "".join(agent.reply(user("again")))
+    agent.close()
+
+
+def test_tool_activity_lines(agent_log, tmp_path):
+    agent = make(agent_log, tmp_path)
+    lines = []
+    agent.on_activity = lines.append
+    list(agent.reply(user("edit the page")))
+    assert lines == ["  ▸ Edit index.html", "  ✓ Edit index.html", "  ▸ npm test", "  ✗ npm test (failed)"]
+    agent.close()

@@ -487,3 +487,77 @@ def test_thinking_tone_is_quiet_and_click_free():
     assert len(t) == 24000 and t.dtype == np.float32
     assert 20 * np.log10(np.abs(t).max()) == pytest.approx(-32, abs=0.5)
     assert abs(t[0]) < 1e-4 and abs(t[int(0.12 * 24000) - 1]) < 1e-3   # fades in and out
+
+
+# ── console: typed turns, interrupt, mute, markdown ──────────────────
+
+def test_typed_prompt_is_answered_like_a_spoken_one():
+    out, done, turns = FakeOut(), threading.Event(), []
+    asr, tts = FakeASR(), FakeTTS()
+    agent = VoiceAgent(energy_vad, Endpointer(None, EndpointConfig(max_silence_ms=300)),
+                       Responder(asr, SpacedLLM(), tts), out,
+                       on_turn=lambda m: (turns.append(m), done.set()))
+    agent.submit_text("what time is it")
+    assert done.wait(2)
+    m = turns[0]
+    assert m.typed and m.transcript == "what time is it" and asr.calls == []
+    assert tts.spoken == ["It is noon right now.", "Anything else?"]
+    agent.close()
+
+
+def test_interrupt_stops_a_reply_and_cancels_the_brain():
+    gate = threading.Event()
+
+    class SilentBrain(SpacedLLM):
+        cancelled = 0
+
+        def reply(self, history):
+            gate.wait(2)                               # a coding agent busy in a tool
+            yield "Too late."
+
+        def cancel(self):
+            SilentBrain.cancelled += 1
+            gate.set()
+
+    out, done, turns = FakeOut(), threading.Event(), []
+    agent = VoiceAgent(energy_vad, Endpointer(None, EndpointConfig(max_silence_ms=300)),
+                       Responder(FakeASR(), SilentBrain(), FakeTTS()), out,
+                       on_turn=lambda m: (turns.append(m), done.set()))
+    assert agent.interrupt() is False                  # nothing to stop
+    agent.submit_text("go")
+    assert wait_for(lambda: agent.busy)
+    assert agent.interrupt() is True
+    assert done.wait(2) and turns[0].cancelled and SilentBrain.cancelled == 1
+    assert out.stopped >= 1
+    agent.close()
+
+
+def test_interrupt_declines_an_open_question():
+    agent, out, notes = asking_agent()
+    t, result = ask_in_background(agent, "Allow?")
+    assert agent.interrupt() is True
+    t.join(2)
+    assert result["answer"] == "reject"
+    agent.close()
+
+
+def test_muted_replies_are_text_only():
+    out, done, turns = FakeOut(), threading.Event(), []
+    tts = FakeTTS()
+    r = Responder(FakeASR(), SpacedLLM(), tts)
+    r.speak = False
+    m = r.respond_text("hi", out)
+    assert tts.spoken == [] and out.chunks == []
+    assert m.reply == "It is noon right now. Anything else?"
+
+
+def test_markdown_is_shown_but_not_read_aloud():
+    class MarkdownLLM(SpacedLLM):
+        def reply(self, history):
+            yield from ["I fixed **two** bugs in `app.py`.\n\n```python\n",
+                        "print('secret code')\n```\n\n- Run the [tests](http://x).\n"]
+
+    tts = FakeTTS()
+    m = Responder(FakeASR(), MarkdownLLM(), tts).respond_text("fix it", CollectingOut())
+    assert tts.spoken == ["I fixed two bugs in app.py.", "Run the tests."]
+    assert "```python" in m.text and "**two**" in m.text      # the screen gets the original
