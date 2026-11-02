@@ -136,7 +136,7 @@ def cmd_run(args) -> None:
     from macvoice.agent import VoiceAgent
     from macvoice.approval import KeyListener
     from macvoice.memory import footprint_mb, torch_loaded
-    from macvoice.tone import thinking_tone
+    from macvoice.tone import done_tone, thinking_tone
 
     vad, endpointer, responder = _build(args)
     mic, out, barge_in, echo_guard_s, mode = open_audio(args, responder.tts.sample_rate)
@@ -144,17 +144,18 @@ def cmd_run(args) -> None:
 
     fp = footprint_mb()
     print(f"ready: footprint {fp:.0f} MB, torch loaded: {torch_loaded()}  ({mode})")
-    tone = None if args.no_thinking_tone else thinking_tone(responder.tts.sample_rate)
+    rate = responder.tts.sample_rate
+    tones = (None, None) if args.no_thinking_tone else (thinking_tone(rate), done_tone(rate))
     brain = responder.llm
     # The console (type or talk) needs a terminal; --turns keeps the plain
     # loop, which can stop by itself.
     if not args.no_console and args.turns is None and sys.stdin.isatty() and sys.stdout.isatty():
-        _run_console(args, vad, endpointer, responder, mic, out, barge_in, echo_guard_s, tone)
+        _run_console(args, vad, endpointer, responder, mic, out, barge_in, echo_guard_s, tones)
         return
     print("Talk to me. Ctrl-C to quit.", flush=True)
     keys = KeyListener()
     agent = VoiceAgent(vad, endpointer, responder, out, barge_in=barge_in, echo_guard_s=echo_guard_s,
-                       thinking_tone=tone, keys=keys if keys.enabled else None)
+                       thinking_tone=tones[0], done_tone=tones[1], keys=keys if keys.enabled else None)
     # -v logs to the same terminal, which would tear the live line.
     status = StatusLine(lambda: (agent.state, agent.level_db), barge_in=barge_in,
                         enabled=False if args.no_status or args.verbose else None)
@@ -169,14 +170,14 @@ def cmd_run(args) -> None:
         status.stop()
 
 
-def _run_console(args, vad, endpointer, responder, mic, out, barge_in, echo_guard_s, tone) -> None:
+def _run_console(args, vad, endpointer, responder, mic, out, barge_in, echo_guard_s, tones) -> None:
     from macvoice.acp import ACPAgent
     from macvoice.agent import VoiceAgent
     from macvoice.console import Console
     from macvoice.status import StatusLine
 
     agent = VoiceAgent(vad, endpointer, responder, out, barge_in=barge_in, echo_guard_s=echo_guard_s,
-                       thinking_tone=tone)
+                       thinking_tone=tones[0], done_tone=tones[1])
     status = StatusLine(lambda: (agent.state, agent.level_db), barge_in=barge_in, enabled=False,
                         color=True)
     brain = responder.llm
@@ -297,7 +298,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--turns", type=int, default=None, help="exit after this many replies")
     p.add_argument("--no-status", action="store_true", help="no live status line, just the turn summaries")
     p.add_argument("--no-thinking-tone", action="store_true",
-                   help="no soft tone while a slow reply hasn't started")
+                   help="no soft tones: none while a slow reply hasn't started, "
+                        "and none when a reply you talked over finishes")
     p.add_argument("--no-console", action="store_true",
                    help="voice only: no input box for typing prompts")
     p.set_defaults(fn=cmd_run)

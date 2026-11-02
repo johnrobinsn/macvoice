@@ -230,20 +230,177 @@ def test_agent_ignores_the_echo_right_after_speaking():
     agent.close()
 
 
-def test_barge_in_stops_the_reply():
+def test_barge_in_stops_the_speech_not_the_brain():
+    """Talking over a reply stops it speaking; the brain isn't cancelled,
+    and the whole reply is kept as text."""
     gate = threading.Event()
     agent, out, turns, done = make_agent(barge_in=True, tts=FakeTTS(chunks=50, block=gate))
+    cancels = []
+    agent.responder.llm.cancel = lambda: cancels.append(1)
     t = speak(agent, 1.0, 0.0)
     t = speak(agent, 0.5, t, loud=False)
-    deadline = time.time() + 2
-    while not agent.speaking and time.time() < deadline:
-        time.sleep(0.01)
-    assert agent.speaking
+    assert wait_for(lambda: agent.speaking)
     speak(agent, 0.9, t + 1)                  # the user talks over the reply (past the 0.5 s grace)
     gate.set()
     assert done.wait(2)
-    assert turns[0].cancelled
+    m = turns[0]
+    assert m.interrupted and not m.cancelled and cancels == []
     assert out.stopped == 1
+    assert m.reply == "It is noon right now. Anything else?"        # all of it, as text
+    assert agent.responder.tts.spoken == ["It is noon right now."]  # the second sentence wasn't said
+    agent.close()
+
+
+def test_what_you_say_while_it_works_is_queued_as_the_next_turn():
+    gate = threading.Event()
+
+    class SlowLLM(SpacedLLM):
+        def reply(self, history):
+            gate.wait(2)                      # busy in a tool
+            yield from super().reply(history)
+
+    out, turns, notes = FakeOut(), [], []
+    asr = FakeASR()
+    agent = VoiceAgent(energy_vad, Endpointer(None, EndpointConfig(max_silence_ms=300)),
+                       Responder(asr, SlowLLM(), FakeTTS()), out, barge_in=True, echo_guard_s=0.0,
+                       on_turn=turns.append, on_note=notes.append)
+    t = speak(agent, 1.0, 0.0)
+    t = speak(agent, 0.5, t, loud=False)
+    assert wait_for(lambda: agent.busy)
+    asr.text = "and add a footer"
+    t = speak(agent, 0.9, t + 1)
+    speak(agent, 0.5, t, loud=False)          # a whole turn, heard mid-reply
+    assert wait_for(lambda: any('queued: "and add a footer"' in n for n in notes))
+    assert turns == []                        # the first turn is still working: nothing cancelled
+    gate.set()
+    assert wait_for(lambda: len(turns) == 2)
+    assert turns[0].interrupted and not turns[0].cancelled
+    assert turns[1].transcript == "and add a footer" and not turns[1].interrupted
+    assert len(asr.calls) == 2                # transcribed once, on arrival
+    agent.close()
+
+
+def test_talking_while_it_thinks_keeps_the_reply_silent():
+    gate = threading.Event()
+
+    class SlowLLM(SpacedLLM):
+        def reply(self, history):
+            gate.wait(2)                      # a coding agent working, nothing said yet
+            yield from super().reply(history)
+
+    out, turns, done = FakeOut(), [], threading.Event()
+    tts = FakeTTS()
+    agent = VoiceAgent(energy_vad, Endpointer(None, EndpointConfig(max_silence_ms=300)),
+                       Responder(FakeASR(), SlowLLM(), tts), out, barge_in=True, echo_guard_s=0.0,
+                       on_turn=lambda m: (turns.append(m), done.set()))
+    t = speak(agent, 1.0, 0.0)
+    t = speak(agent, 0.5, t, loud=False)
+    assert wait_for(lambda: agent.state == "thinking")
+    speak(agent, 0.9, t + 1)                  # talking while it works
+    assert agent.state in ("hearing", "working")
+    gate.set()
+    assert done.wait(2)
+    assert turns[0].interrupted and tts.spoken == [] and out.chunks == []
+    assert turns[0].reply == "It is noon right now. Anything else?"
+    agent.close()
+
+
+def test_saying_stop_cancels_the_brain():
+    gate = threading.Event()
+
+    class SilentBrain(SpacedLLM):
+        cancelled = 0
+
+        def reply(self, history):
+            gate.wait(2)
+            yield "Too late."
+
+        def cancel(self):
+            SilentBrain.cancelled += 1
+            gate.set()
+
+    out, turns, done, notes = FakeOut(), [], threading.Event(), []
+    asr = FakeASR("go")
+    agent = VoiceAgent(energy_vad, Endpointer(None, EndpointConfig(max_silence_ms=300)),
+                       Responder(asr, SilentBrain(), FakeTTS()), out, barge_in=True, echo_guard_s=0.0,
+                       on_turn=lambda m: (turns.append(m), done.set()), on_note=notes.append)
+    t = speak(agent, 1.0, 0.0)
+    t = speak(agent, 0.5, t, loud=False)
+    assert wait_for(lambda: agent.busy)
+    asr.text = "Stop."
+    t = speak(agent, 0.9, t + 1)
+    speak(agent, 0.5, t, loud=False)
+    assert done.wait(2)
+    assert turns[0].cancelled and SilentBrain.cancelled == 1
+    assert "stopping the agent" in notes[-1]
+    time.sleep(0.1)
+    assert len(turns) == 1                    # "stop" isn't sent on as a prompt
+    agent.close()
+
+
+@pytest.mark.parametrize("text, stop", [
+    ("Stop.", True), ("stop it", True), ("Cancel that!", True), ("stop, stop", True),
+    ("stop using tabs", False), ("don't stop", False), ("bus stop", False), ("", False),
+])
+def test_is_stop(text, stop):
+    from macvoice.agent import is_stop
+    assert is_stop(text) is stop
+
+
+def test_done_cue_after_a_reply_you_talked_over():
+    from macvoice.tone import done_tone
+
+    gate = threading.Event()
+    cue = done_tone(24000)
+    out, turns, done = FakeOut(), [], threading.Event()
+
+    class SlowLLM(SpacedLLM):
+        def reply(self, history):
+            gate.wait(2)
+            yield from super().reply(history)
+
+    agent = VoiceAgent(energy_vad, Endpointer(None, EndpointConfig(max_silence_ms=300)),
+                       Responder(FakeASR(), SlowLLM(), FakeTTS()), out, barge_in=True, echo_guard_s=0.0,
+                       on_turn=lambda m: (turns.append(m), done.set()), done_tone=cue)
+    t = speak(agent, 1.0, 0.0)
+    t = speak(agent, 0.5, t, loud=False)
+    assert wait_for(lambda: agent.busy)
+    t = speak(agent, 0.6, t + 1, loud=False)  # past the reply's first 0.5 s
+    speak(agent, 0.4, t)                      # hushes it; no silence after, so not a turn
+    gate.set()
+    assert done.wait(2)
+    assert wait_for(lambda: not agent.busy)
+    assert len(out.chunks) == 1 and len(out.chunks[0]) == len(cue)
+    agent.close()
+
+
+def test_a_question_is_still_spoken_after_barge_in():
+    from macvoice.acp import ALLOW
+
+    class AskingLLM(SpacedLLM):
+        def reply(self, history):
+            gate.wait(2)
+            decision = agent.ask("The agent wants to run ls. Allow?")
+            yield f"You said {'yes' if decision == ALLOW else 'no'}."
+
+    gate, done = threading.Event(), threading.Event()
+    out, asr, tts = FakeOut(), FakeASR("list the files"), FakeTTS()
+    agent = VoiceAgent(energy_vad, Endpointer(None, EndpointConfig(max_silence_ms=300)),
+                       Responder(asr, AskingLLM(), tts), out, barge_in=True, echo_guard_s=0.0,
+                       on_turn=lambda m: done.set())
+    t = speak(agent, 1.0, 0.0)
+    t = speak(agent, 0.5, t, loud=False)
+    assert wait_for(lambda: agent.busy)
+    t = speak(agent, 0.6, t + 1, loud=False)
+    speak(agent, 0.4, t)                      # hush it
+    gate.set()
+    assert wait_for(lambda: agent.state == "asking")
+    assert tts.spoken == ["The agent wants to run ls. Allow?"]
+    asr.text = "yes"
+    t = speak(agent, 0.5, 20.0)
+    speak(agent, 0.5, t, loud=False)
+    assert done.wait(2)
+    assert tts.spoken == ["The agent wants to run ls. Allow?"]   # the reply itself stays silent
     agent.close()
 
 

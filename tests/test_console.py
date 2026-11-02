@@ -173,5 +173,11 @@ def test_typed_turns_skip_the_echo_and_voice_timings(pipe, capsys):
     c.print_turn(TurnMetrics(transcript="hi", text="Hello.", typed=True, cancelled=True,
                              llm_first_sentence_ms=800, tts_first_audio_ms=5))
     out = capsys.readouterr().out
-    assert "you :" not in out and "endpoint" not in out and "(interrupted)" in out
+    assert "you :" not in out and "endpoint" not in out and "(stopped)" in out
     assert "after you pressed Enter" in out
+
+
+def test_a_reply_you_talked_over_says_so(pipe, capsys):
+    console(pipe).print_turn(TurnMetrics(transcript="hi", text="Hello. More.", interrupted=True))
+    out = capsys.readouterr().out
+    assert "More." in out and "talked over" in out and "(stopped)" not in out

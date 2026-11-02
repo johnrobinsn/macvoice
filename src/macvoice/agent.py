@@ -6,8 +6,11 @@
 :class:`Responder` handles one finished turn synchronously and records
 where the time went. :class:`VoiceAgent` runs it live: the microphone
 thread feeds chunks, replies run on a worker thread, and the mic is muted
-while the agent speaks (half duplex) unless ``barge_in`` is on, in which
-case the user starting to talk stops the reply. Barge-in needs either
+while the agent speaks (half duplex) unless ``barge_in`` is on. With
+barge-in, talking over a reply stops it *speaking*, not working: the brain
+finishes its turn, the whole reply goes to the screen and the history, and
+what you said is queued as the next turn. Saying just "stop" (or Ctrl-C at
+the console) is what cancels the brain's turn. Barge-in needs either
 headphones or echo cancellation (:mod:`macvoice.audio_mac`); otherwise on
 laptop speakers the mic hears the agent and it interrupts itself.
 
@@ -23,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import queue
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -39,6 +43,26 @@ from macvoice.tts import TTS
 from macvoice.vad import CHUNK
 
 log = logging.getLogger("macvoice")
+
+
+# Said on its own while the agent is working: cancel its turn. Anything
+# longer is a prompt ("stop using tabs" goes to the agent).
+STOP_PHRASES = {"stop", "cancel", "stop it", "stop that", "cancel that", "cancel it",
+                "stop stop", "please stop", "stop please", "stop now"}
+
+
+def is_stop(text: str) -> bool:
+    """Whether ``text`` is just "stop" (or "cancel", "stop that", ...)."""
+    return " ".join(re.findall(r"[a-z']+", text.lower())) in STOP_PHRASES
+
+
+@dataclass
+class _Heard:
+    """A turn heard while a reply was under way, transcribed on arrival."""
+
+    event: TurnEvent
+    transcript: str
+    asr_ms: float
 
 
 class AudioOut(Protocol):
@@ -64,7 +88,8 @@ class TurnMetrics:
     tts_first_audio_ms: float | None = None      # after the first sentence
     reply_audio_s: float = 0.0
     tts_synth_ms: float = 0.0
-    cancelled: bool = False
+    cancelled: bool = False                      # stopped: the brain's turn was cancelled
+    interrupted: bool = False                    # talked over: the rest wasn't spoken
     text: str = ""                               # the reply as the brain wrote it (markdown)
     typed: bool = False                          # typed at the console, not spoken
     timeline: dict[str, float] = field(default_factory=dict)
@@ -83,26 +108,44 @@ class Responder:
         self.asr, self.llm, self.tts = asr, llm, tts
         self.history: list[dict] = []
         self.speak = True  # False: replies are text only (the console's /mute)
+        # The speech models run one at a time: a turn heard while a reply is
+        # under way is transcribed on another thread.
+        self.models = threading.Lock()
+
+    def transcribe(self, audio: np.ndarray) -> tuple[str, float]:
+        """``(text, milliseconds)``."""
+        t0 = time.perf_counter()
+        with self.models:
+            text = self.asr.transcribe(audio)
+        return text, (time.perf_counter() - t0) * 1000
 
     def respond(self, audio: np.ndarray, out: AudioOut, cancel: threading.Event | None = None,
-                metrics: TurnMetrics | None = None) -> TurnMetrics:
+                metrics: TurnMetrics | None = None, hush: threading.Event | None = None) -> TurnMetrics:
         m = metrics or TurnMetrics()
-        t0 = time.perf_counter()
-        m.transcript = self.asr.transcribe(audio)
-        m.asr_ms = (time.perf_counter() - t0) * 1000
+        m.transcript, m.asr_ms = self.transcribe(audio)
+        return self.respond_heard(m, out, cancel, hush)
+
+    def respond_heard(self, m: TurnMetrics, out: AudioOut, cancel: threading.Event | None = None,
+                      hush: threading.Event | None = None) -> TurnMetrics:
+        """A spoken turn already transcribed (``m.transcript``)."""
         if not m.transcript or not any(ch.isalnum() for ch in m.transcript):
             return m  # Parakeet returns "." for breath and noise
-        return self._reply(m, out, cancel)
+        return self._reply(m, out, cancel, hush)
 
     def respond_text(self, text: str, out: AudioOut, cancel: threading.Event | None = None,
-                     metrics: TurnMetrics | None = None) -> TurnMetrics:
+                     metrics: TurnMetrics | None = None, hush: threading.Event | None = None) -> TurnMetrics:
         """A typed prompt: the same as a spoken one, minus the ASR."""
         m = metrics or TurnMetrics()
         m.transcript, m.typed = text, True
-        return self._reply(m, out, cancel)
+        return self._reply(m, out, cancel, hush)
 
-    def _reply(self, m: TurnMetrics, out: AudioOut, cancel: threading.Event | None) -> TurnMetrics:
+    def _reply(self, m: TurnMetrics, out: AudioOut, cancel: threading.Event | None,
+               hush: threading.Event | None = None) -> TurnMetrics:
+        """``cancel`` stops the reply (and, by closing the brain's stream,
+        its turn). ``hush`` only stops the speech: the brain finishes, and
+        the rest of the reply is kept as text."""
         cancel = cancel or threading.Event()
+        hush = hush or threading.Event()
         self.history.append({"role": "user", "content": m.transcript})
 
         t_llm = time.perf_counter()
@@ -126,19 +169,23 @@ class Responder:
                 if m.llm_first_sentence_ms is None:
                     m.llm_first_sentence_ms = (time.perf_counter() - t_llm) * 1000
                 spoken.append(sentence)
-                if not self.speak or self.tts is None:
+                if not self.speak or self.tts is None or hush.is_set():
                     continue
                 t_tts = time.perf_counter()
                 said = False
                 try:
-                    for chunk in self.tts.stream(sentence):
-                        if cancel.is_set():
+                    stream = iter(self.tts.stream(sentence))
+                    while not (cancel.is_set() or hush.is_set()):
+                        with self.models:
+                            chunk = next(stream, None)
+                        if chunk is None:
                             break
                         if m.tts_first_audio_ms is None:
                             m.tts_first_audio_ms = (time.perf_counter() - t_tts) * 1000
                         m.reply_audio_s += len(chunk) / self.tts.sample_rate
                         out.write(chunk)
                         said = True
+                    getattr(stream, "close", lambda: None)()   # stopped mid-sentence
                 except Exception as e:  # noqa: BLE001 - one bad sentence shouldn't end the reply
                     log.warning("TTS failed on %r (%s); skipping it", sentence, e)
                     if not said:
@@ -146,6 +193,7 @@ class Responder:
                 m.tts_synth_ms += (time.perf_counter() - t_tts) * 1000
         finally:
             m.cancelled = cancel.is_set()
+            m.interrupted = hush.is_set() and not m.cancelled
             m.reply = " ".join(spoken)
             m.text = "".join(written).strip()
             if spoken:
@@ -163,6 +211,8 @@ class _SpeechOut:
     def write(self, audio: np.ndarray) -> None:
         a = self.agent
         with a._out_lock:
+            if a._hush.is_set():
+                return
             if a._toned:
                 a.out.stop()
                 a._toned = False
@@ -188,7 +238,7 @@ class VoiceAgent:
                  on_turn: Callable[[TurnMetrics], None] | None = None,
                  thinking_tone: np.ndarray | None = None, thinking_tone_after_s: float = 1.2,
                  on_note: Callable[[str], None] | None = None, keys=None,
-                 answer_timeout_s: float = 20.0) -> None:
+                 answer_timeout_s: float = 20.0, done_tone: np.ndarray | None = None) -> None:
         self.vad, self.endpointer, self.responder, self.out = vad, endpointer, responder, out
         self.barge_in, self.echo_guard_s = barge_in, echo_guard_s
         # Speech needed to stop a reply: longer than a turn start, so a cough
@@ -201,10 +251,11 @@ class VoiceAgent:
         self._speaking_since: float | None = None
         self.on_turn = on_turn
         self._turns: queue.Queue[tuple[TurnEvent | str, float] | None] = queue.Queue()
-        self._cancel = threading.Event()
+        self._cancel = threading.Event()   # stop the brain's turn (Ctrl-C, "stop")
+        self._hush = threading.Event()     # stop the speech only (barge-in)
         self._replying = threading.Event()
         self._muted_until = 0.0
-        self.interruptions = 0  # barge-ins; a reply can be stopped after its metrics are reported
+        self.interruptions = 0  # barge-ins; a reply can be talked over after its metrics are reported
         self.level_db = -100.0  # the last mic chunk's level, dBFS (for the status line)
         self._audible = False   # the current reply has started speaking
         self._speech_out = _SpeechOut(self)
@@ -219,8 +270,17 @@ class VoiceAgent:
         self.thinking_tone, self.thinking_tone_after_s = thinking_tone, thinking_tone_after_s
         self._thinking_since = 0.0
         self._toned = False
+        # Played when a reply you talked over finishes, if nothing is queued:
+        # the agent is free again.
+        self.done_tone = done_tone
+        # Turns heard while a reply is under way: transcribed here, in order,
+        # so "stop" can cancel the reply and anything else waits its turn.
+        self._heard: queue.Queue[tuple[TurnEvent, float] | None] = queue.Queue()
+        self._hearing = 0  # turns in _heard or being transcribed
+        self._hearing_lock = threading.Lock()
         self._worker = threading.Thread(target=self._work, name="macvoice-responder", daemon=True)
         self._worker.start()
+        threading.Thread(target=self._triage, name="macvoice-heard", daemon=True).start()
         if thinking_tone is not None:
             threading.Thread(target=self._tone_loop, name="macvoice-tone", daemon=True).start()
 
@@ -232,11 +292,14 @@ class VoiceAgent:
     def state(self) -> str:
         """``asking`` (waiting for a yes or no), ``speaking`` (reply audio
         playing), ``thinking`` (working on a reply, nothing said yet; the
-        thinking tone may be playing), ``hearing`` (in a turn) or
-        ``listening``. A reply stays ``speaking`` between its sentences."""
+        thinking tone may be playing), ``working`` (still on a reply you
+        talked over, silently), ``hearing`` (in a turn) or ``listening``.
+        A reply stays ``speaking`` between its sentences."""
         if self._asking.is_set():
             return "asking"
         replying = self._replying.is_set()
+        if replying and self._hush.is_set() and not self.out.busy:
+            return "hearing" if self.endpointer.in_turn else "working"
         tone_only = replying and self._toned and not self._audible  # the thinking tone isn't speech
         if (self.out.busy and not tone_only) or (replying and self._audible):
             return "speaking"
@@ -265,22 +328,35 @@ class VoiceAgent:
         prob = self.vad(chunk)
         event = self.endpointer.push(chunk, prob)
         speech = prob >= self.endpointer.cfg.speech_prob
-        # Once per reply: talking on while a stopped reply winds down isn't
+        # Once per reply: talking on over a reply already hushed isn't
         # another interruption.
         settled = (speaking and now - self._speaking_since >= self.barge_in_grace_s
-                   and not self._cancel.is_set())
+                   and not self._cancel.is_set() and not self._hush.is_set())
         self._voiced_run = self._voiced_run + 1 if speech and settled else 0
         if self._voiced_run >= self._barge_in_n:
-            log.info("barge-in: stopping the reply")
+            log.info("barge-in: hushing the reply; the brain carries on")
             self._voiced_run = 0
             self.interruptions += 1
-            self._stop_reply()
+            self._hush_reply()
         if event is not None and event.kind == "end":
-            self._turns.put((event, now))
+            with self._hearing_lock:
+                # Behind a reply, or behind turns heard during one: keep the order.
+                triage = self._replying.is_set() or self._hearing > 0
+                if triage:
+                    self._hearing += 1
+            (self._heard if triage else self._turns).put((event, now))
         return event
 
+    def _hush_reply(self) -> None:
+        """Barge-in: stop the speech (and the thinking tone) for the rest of
+        this reply. The brain keeps working; its reply goes to the screen."""
+        with self._out_lock:
+            self._hush.set()
+            self.out.stop()
+            self._toned = False
+
     def _stop_reply(self) -> None:
-        """Stop the reply now: no more speech, and tell the brain to stop
+        """Ctrl-C, Esc or "stop": no more speech, and tell the brain to stop
         working (a coding agent may be mid-tool, with nothing streaming)."""
         self._cancel.set()
         self.out.stop()
@@ -312,14 +388,40 @@ class VoiceAgent:
             return True
         return False
 
+    def _triage(self) -> None:
+        """Turns heard while a reply is under way: "stop" cancels the reply;
+        anything else is queued as the next turn."""
+        while (item := self._heard.get()) is not None:
+            event, fired = item
+            try:
+                text, asr_ms = self.responder.transcribe(event.audio)
+                if not text or not any(ch.isalnum() for ch in text):
+                    continue
+                if self._replying.is_set() and is_stop(text):
+                    self.on_note(f"  you : {text}  -> stopping the agent")
+                    self._stop_reply()
+                    continue
+                if self._replying.is_set():
+                    self.on_note(f'  queued: "{text}" (sends when the agent finishes)')
+                self._turns.put((_Heard(event, text, asr_ms), fired))
+            except Exception:
+                log.exception("couldn't transcribe a turn")
+            finally:
+                with self._hearing_lock:
+                    self._hearing -= 1
+
     def _work(self) -> None:
         while (item := self._turns.get()) is not None:
             event, fired = item
             self._cancel = threading.Event()
+            self._hush = threading.Event()
             self._audible = False
             self._thinking_since = time.monotonic()
             self._replying.set()
             try:
+                heard = event if isinstance(event, _Heard) else None
+                if heard is not None:
+                    event = heard.event
                 if isinstance(event, str):
                     m = TurnMetrics()
                 else:
@@ -328,9 +430,12 @@ class VoiceAgent:
                 # Time the turn waited in the queue counts against the reply.
                 m.timeline["queued_ms"] = (time.monotonic() - fired) * 1000
                 if isinstance(event, str):
-                    self.responder.respond_text(event, self._speech_out, self._cancel, m)
+                    self.responder.respond_text(event, self._speech_out, self._cancel, m, self._hush)
+                elif heard is not None:
+                    m.transcript, m.asr_ms = heard.transcript, heard.asr_ms
+                    self.responder.respond_heard(m, self._speech_out, self._cancel, self._hush)
                 else:
-                    self.responder.respond(event.audio, self._speech_out, self._cancel, m)
+                    self.responder.respond(event.audio, self._speech_out, self._cancel, m, self._hush)
                 if self.on_turn:
                     self.on_turn(m)
             except Exception:
@@ -340,6 +445,10 @@ class VoiceAgent:
                     if self._toned:  # a reply that never spoke: don't leave the tone playing
                         self.out.stop()
                         self._toned = False
+                    if (self._hush.is_set() and not self._cancel.is_set() and self.done_tone is not None
+                            and self.responder.speak and self._turns.empty() and not self._hearing
+                            and not self._closing.is_set()):
+                        self.out.write(self.done_tone)
                 self._replying.clear()
 
     # ── questions ─────────────────────────────────────────────────────
@@ -427,7 +536,7 @@ class VoiceAgent:
         while not self._closing.wait(tick_s):
             with self._out_lock:
                 if (self._replying.is_set() and not self._audible and not self._asking.is_set()
-                        and self.responder.speak
+                        and self.responder.speak and not self._hush.is_set()
                         and not self._cancel.is_set() and not self.out.busy
                         and time.monotonic() - self._thinking_since >= self.thinking_tone_after_s):
                     self.out.write(self.thinking_tone)
@@ -456,6 +565,7 @@ class VoiceAgent:
     def close(self) -> None:
         self._closing.set()
         self._cancel.set()
+        self._heard.put(None)
         self._turns.put(None)
         self._worker.join(timeout=5)
         if self.keys is not None:

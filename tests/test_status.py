@@ -41,8 +41,13 @@ def test_render_shows_the_meter_only_while_listening_or_hearing():
 
 
 def test_render_says_whether_you_can_interrupt():
-    assert "talk to interrupt" in render("speaking", -40, barge_in=True)
+    assert "talk over me" in render("speaking", -40, barge_in=True)
     assert "mic muted" in render("speaking", -40, barge_in=False)
+
+
+def test_render_working_says_how_to_cancel():
+    line = render("working", -40, elapsed_s=3.21)
+    assert line.startswith("◌ working 3.2s") and 'say "stop" to cancel' in line
 
 
 def test_render_fits_the_terminal():

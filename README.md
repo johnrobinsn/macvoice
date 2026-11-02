@@ -37,7 +37,7 @@ uv run macvoice download             # the models, 0.85 GB, once
 # In another terminal, a local LLM (optional; ~2.6 GB, fully offline):
 uvx --from mlx-lm mlx_lm.server --model mlx-community/Qwen3-4B-Instruct-2507-4bit --prompt-cache-size 1
 
-uv run macvoice run                  # talk to it; talk over it to interrupt
+uv run macvoice run                  # talk to it; talk over it to cut it short
 ```
 
 After the download the voice pipeline runs offline. (`run` downloads anything still missing itself, so `download` is only there to get the wait out of the way first.) While it runs, the bottom line of the terminal shows what it's doing and how loud your mic is:
@@ -57,8 +57,8 @@ It goes `listening` → `hearing you` → `thinking` → `speaking`, plus `allow
 | Enter | send |
 | Shift+Enter, Option+Enter, Ctrl+J, or `\` then Enter | new line |
 | Up / Down, Ctrl+R | earlier prompts (kept across runs), search them |
-| Ctrl+C | clear the line; or stop the reply; twice to quit |
-| Esc | stop the reply |
+| Ctrl+C | clear the line; or stop the reply and cancel the agent's turn; twice to quit |
+| Esc | stop the reply and cancel the agent's turn |
 | y / n / a | answer a permission question (when the line is empty) |
 
 Commands: `/mute` (replies as text only), `/modes` and `/mode NAME` (an ACP agent's modes), `/help`, `/quit`. Shift+Enter works in terminals that support the kitty keyboard protocol (Ghostty, kitty, WezTerm, iTerm2); in Terminal.app use Option+Enter (with "Use Option as Meta key" on) or Ctrl+J. `--no-console` goes back to voice only.
@@ -74,7 +74,7 @@ The first time, macOS asks for microphone access for your terminal.
 Laptop speakers leak into the laptop mic, so a voice agent hears itself. macvoice runs the mic and speaker through one `AVAudioEngine` with Apple's voice processing turned on, the same echo canceller FaceTime uses and Chrome uses for `echoCancellation: "all"` ([`audio_mac.py`](src/macvoice/audio_mac.py), PyObjC; no model, about 70 MB). On an M5's speakers it brings the agent's own voice at the mic from −21 dBFS down to −78 dBFS, below the room's noise, so you can interrupt it by talking. A few things to know:
 
 - It cancels everything the Mac plays, not just the agent: a video playing in the background won't trigger it either.
-- Talking over the reply stops it after 250 ms of speech, so a cough doesn't. Speech in the first 0.5 s of a reply is ignored: the first reply of a session leaks a syllable or two of echo while the canceller learns the room.
+- Talking over the reply stops it speaking after 250 ms of speech, so a cough doesn't. Speech in the first 0.5 s of a reply is ignored: the first reply of a session leaks a syllable or two of echo while the canceller learns the room.
 - It uses the system default mic and speaker, and turns other apps' audio down only slightly while it runs. Choosing a device with `--input-device` or `--output-device` turns it off, and if voice processing won't start on your audio hardware macvoice says so and runs half duplex.
 - `--no-aec` turns it off: the loop is then **half duplex**, the mic muted while it speaks. With headphones, `--no-aec --barge-in` lets you interrupt without echo cancellation.
 
@@ -117,6 +117,8 @@ When the agent wants to run a tool, it asks out loud ("Claude wants to create th
 
 `--permissions allow` approves every request without asking, and `--permissions deny` declines them all. `--mode` takes any mode the agent advertises, by id or name, so it works with any ACP agent. While a slow reply hasn't started, a soft tone plays once a second so you know it's working (`--no-thinking-tone` turns it off).
 
+**Talking over it stops the voice, not the agent.** When you talk over a reply, or while the agent is still working, it goes quiet for the rest of that turn but keeps working. The whole reply still lands on screen, and what you said goes to the agent as the next prompt once the turn ends (it prints `queued: ...`). If nothing is queued, two soft blips tell you when the agent is free again. To actually cancel the agent's turn, say just "stop" (or "cancel", "stop that"), or press Ctrl+C or Esc. Permission questions are always spoken, even after you've talked over the reply.
+
 Caveats:
 
 - **The agent really runs things.** With `--permissions allow`, or a mode such as `bypassPermissions`, it runs commands and edits files without asking. Use those only in a folder you don't mind losing. In `acceptEdits` mode, file edits go through without asking; commands still ask.
@@ -124,7 +126,9 @@ Caveats:
 - **One-word answers are near the floor.** A turn needs 250 ms of speech, and a quick "no" can fall under it. A missed answer is asked again, and silence declines. The keys always work.
 - **"Always" is up to the agent.** macvoice passes the agent's own "allow always" option back; how long that lasts (this session, this folder) is the agent's rule, not macvoice's.
 - **Tested with Claude Code** (`claude-agent-acp`). Other ACP agents should work, since modes and permission requests are part of the protocol, but their modes and request details differ.
-- **The agent may be cut off mid-change.** Talking over a reply cancels the agent's turn (`session/cancel`), possibly partway through a multi-step change. Ask it what state things are in.
+- **What you say waits for the turn to finish.** Talking over the agent doesn't cancel its turn, so your next prompt waits until it's done, which can take a while if it's in the middle of a long change. Say "stop" to cancel instead.
+- **"Stop" can cut it off mid-change.** Cancelling (`session/cancel`) can land partway through a multi-step change. Ask it what state things are in.
+- **The agent doesn't know where you stopped listening.** Its history has the whole reply, so it may refer to something you didn't hear. It's on screen.
 
 ### Other commands
 

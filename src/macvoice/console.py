@@ -246,7 +246,9 @@ class Console:
                                width=shutil.get_terminal_size((80, 24)).columns)
             rich.print(Padding(Markdown(text), (0, 0, 0, 2)))
         if m.cancelled:
-            print("\033[2m  (interrupted)\033[0m")
+            print("\033[2m  (stopped)\033[0m")
+        elif m.interrupted:
+            print("\033[2m  (talked over: the rest wasn't spoken)\033[0m")
         print(f"\033[2m  {timing(m)}\033[0m")
 
     def activity(self, line: str) -> None:
