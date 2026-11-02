@@ -58,7 +58,7 @@ def is_stop(text: str) -> bool:
 
 @dataclass
 class _Heard:
-    """A turn heard while a reply was under way, transcribed on arrival."""
+    """A spoken turn, transcribed on the hearing thread."""
 
     event: TurnEvent
     transcript: str
@@ -108,15 +108,11 @@ class Responder:
         self.asr, self.llm, self.tts = asr, llm, tts
         self.history: list[dict] = []
         self.speak = True  # False: replies are text only (the console's /mute)
-        # The speech models run one at a time: a turn heard while a reply is
-        # under way is transcribed on another thread.
-        self.models = threading.Lock()
 
     def transcribe(self, audio: np.ndarray) -> tuple[str, float]:
         """``(text, milliseconds)``."""
         t0 = time.perf_counter()
-        with self.models:
-            text = self.asr.transcribe(audio)
+        text = self.asr.transcribe(audio)
         return text, (time.perf_counter() - t0) * 1000
 
     def respond(self, audio: np.ndarray, out: AudioOut, cancel: threading.Event | None = None,
@@ -174,18 +170,14 @@ class Responder:
                 t_tts = time.perf_counter()
                 said = False
                 try:
-                    stream = iter(self.tts.stream(sentence))
-                    while not (cancel.is_set() or hush.is_set()):
-                        with self.models:
-                            chunk = next(stream, None)
-                        if chunk is None:
+                    for chunk in self.tts.stream(sentence):
+                        if cancel.is_set() or hush.is_set():
                             break
                         if m.tts_first_audio_ms is None:
                             m.tts_first_audio_ms = (time.perf_counter() - t_tts) * 1000
                         m.reply_audio_s += len(chunk) / self.tts.sample_rate
                         out.write(chunk)
                         said = True
-                    getattr(stream, "close", lambda: None)()   # stopped mid-sentence
                 except Exception as e:  # noqa: BLE001 - one bad sentence shouldn't end the reply
                     log.warning("TTS failed on %r (%s); skipping it", sentence, e)
                     if not said:
@@ -250,7 +242,7 @@ class VoiceAgent:
         self._voiced_run = 0
         self._speaking_since: float | None = None
         self.on_turn = on_turn
-        self._turns: queue.Queue[tuple[TurnEvent | str, float] | None] = queue.Queue()
+        self._turns: queue.Queue[tuple[_Heard | str, float] | None] = queue.Queue()  # transcribed or typed
         self._cancel = threading.Event()   # stop the brain's turn (Ctrl-C, "stop")
         self._hush = threading.Event()     # stop the speech only (barge-in)
         self._replying = threading.Event()
@@ -273,14 +265,16 @@ class VoiceAgent:
         # Played when a reply you talked over finishes, if nothing is queued:
         # the agent is free again.
         self.done_tone = done_tone
-        # Turns heard while a reply is under way: transcribed here, in order,
-        # so "stop" can cancel the reply and anything else waits its turn.
-        self._heard: queue.Queue[tuple[TurnEvent, float] | None] = queue.Queue()
+        # Speech to text has its own thread, and is the only thing that uses
+        # the ASR model: every spoken turn and answer is transcribed there, in
+        # order, while the worker replies. So "stop" is heard while the
+        # agent works, and anything else is queued as the next turn.
+        self._heard: queue.Queue[tuple[str, TurnEvent, float] | None] = queue.Queue()
         self._hearing = 0  # turns in _heard or being transcribed
         self._hearing_lock = threading.Lock()
         self._worker = threading.Thread(target=self._work, name="macvoice-responder", daemon=True)
         self._worker.start()
-        threading.Thread(target=self._triage, name="macvoice-heard", daemon=True).start()
+        threading.Thread(target=self._hear, name="macvoice-stt", daemon=True).start()
         if thinking_tone is not None:
             threading.Thread(target=self._tone_loop, name="macvoice-tone", daemon=True).start()
 
@@ -340,11 +334,8 @@ class VoiceAgent:
             self._hush_reply()
         if event is not None and event.kind == "end":
             with self._hearing_lock:
-                # Behind a reply, or behind turns heard during one: keep the order.
-                triage = self._replying.is_set() or self._hearing > 0
-                if triage:
-                    self._hearing += 1
-            (self._heard if triage else self._turns).put((event, now))
+                self._hearing += 1
+            self._heard.put(("turn", event, now))
         return event
 
     def _hush_reply(self) -> None:
@@ -388,11 +379,19 @@ class VoiceAgent:
             return True
         return False
 
-    def _triage(self) -> None:
-        """Turns heard while a reply is under way: "stop" cancels the reply;
-        anything else is queued as the next turn."""
+    def _hear(self) -> None:
+        """The speech-to-text thread. An answer to an open question goes to
+        :meth:`ask`. A turn heard while a reply is under way is "stop" (cancel
+        the reply) or the next turn, queued; any other turn goes straight
+        to the worker."""
         while (item := self._heard.get()) is not None:
-            event, fired = item
+            kind, event, fired = item
+            if kind == "answer":
+                try:
+                    self._answers.put(("text", self.responder.transcribe(event.audio)[0]))
+                except Exception:
+                    log.exception("couldn't transcribe an answer")
+                continue
             try:
                 text, asr_ms = self.responder.transcribe(event.audio)
                 if not text or not any(ch.isalnum() for ch in text):
@@ -429,13 +428,11 @@ class VoiceAgent:
                                     endpoint_reason=event.reason, p_complete=event.p_complete)
                 # Time the turn waited in the queue counts against the reply.
                 m.timeline["queued_ms"] = (time.monotonic() - fired) * 1000
-                if isinstance(event, str):
+                if heard is None:
                     self.responder.respond_text(event, self._speech_out, self._cancel, m, self._hush)
-                elif heard is not None:
+                else:
                     m.transcript, m.asr_ms = heard.transcript, heard.asr_ms
                     self.responder.respond_heard(m, self._speech_out, self._cancel, self._hush)
-                else:
-                    self.responder.respond(event.audio, self._speech_out, self._cancel, m, self._hush)
                 if self.on_turn:
                     self.on_turn(m)
             except Exception:
@@ -463,7 +460,7 @@ class VoiceAgent:
             return None
         event = self.endpointer.push(chunk, self.vad(chunk))
         if event is not None and event.kind == "end":
-            self._answers.put(("voice", event.audio))
+            self._heard.put(("answer", event, now))
         return event
 
     def ask(self, spoken: str, printed: str = "", retry: str = "Sorry, was that a yes or a no?") -> str | None:
@@ -498,7 +495,7 @@ class VoiceAgent:
                             self.on_note(f"    {KEYS[value]} (key {value})")
                             return KEYS[value]
                         continue
-                    text = self.responder.asr.transcribe(value)
+                    text = value  # transcribed on the speech-to-text thread
                     answer = parse_answer(text)
                     self.on_note(f"    you : {text}" + (f"  -> {answer}" if answer else "  -> unclear"))
                     if answer:
