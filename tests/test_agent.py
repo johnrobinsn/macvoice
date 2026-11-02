@@ -338,6 +338,55 @@ def test_saying_stop_cancels_the_brain():
     agent.close()
 
 
+def test_the_next_turn_is_not_hushed():
+    """A reply you talked over doesn't carry over: the queued turn after it
+    speaks, and gets its own grace period."""
+    gate = threading.Event()
+
+    class SlowFirst(SpacedLLM):
+        def reply(self, history):
+            if len(self.histories) == 0:
+                gate.wait(2)
+            yield from super().reply(history)
+
+    out, turns, tts = FakeOut(), [], FakeTTS()
+    asr = FakeASR()
+    agent = VoiceAgent(energy_vad, Endpointer(None, EndpointConfig(max_silence_ms=300)),
+                       Responder(asr, SlowFirst(), tts), out, barge_in=True, echo_guard_s=0.0,
+                       on_turn=turns.append)
+    t = speak(agent, 1.0, 0.0)
+    t = speak(agent, 0.5, t, loud=False)
+    assert wait_for(lambda: agent.busy)
+    asr.text = "and add a footer"
+    t = speak(agent, 0.9, t + 1)              # hushes the first reply, and is queued
+    speak(agent, 0.5, t, loud=False)
+    assert wait_for(lambda: agent._hearing == 0)
+    gate.set()
+    assert wait_for(lambda: len(turns) == 2)
+    assert turns[0].interrupted and not turns[1].interrupted
+    assert tts.spoken == ["It is noon right now.", "Anything else?"]   # all of the second reply
+    agent.close()
+
+
+def test_a_late_stop_leaves_the_next_reply_alone():
+    agent, out, turns, done = make_agent(barge_in=True)
+    notes = []
+    agent.on_note = notes.append
+    stops = []
+    agent._stop_reply = lambda: stops.append(1)
+    agent._replying.set()
+    agent._turn_no = 7                        # the reply "stop" is said over
+    agent.responder.asr.text = "stop"
+    t = speak(agent, 0.6, 0.0, loud=False)
+    t = speak(agent, 0.5, t)
+    agent._turn_no = 8                        # ... has finished; the next one is running
+    speak(agent, 0.5, t, loud=False)
+    assert wait_for(lambda: any("already finished" in n for n in notes))
+    assert stops == [] and turns == []
+    agent._replying.clear()
+    agent.close()
+
+
 @pytest.mark.parametrize("text, stop", [
     ("Stop.", True), ("stop it", True), ("Cancel that!", True), ("stop, stop", True),
     ("stop using tabs", False), ("don't stop", False), ("bus stop", False), ("", False),
@@ -405,7 +454,7 @@ def test_a_question_is_still_spoken_after_barge_in():
 
 
 def test_short_sounds_do_not_stop_the_reply():
-    agent, out, turns, done = make_agent(barge_in=True)
+    agent, out, turns, done = make_agent(barge_in=True, max_silence_ms=3000)   # no turns end
     out._busy = True
     speak(agent, 0.45, 0.0)                   # the reply's first 0.5 s: echo leaking, ignored
     speak(agent, 0.3, 0.45, loud=False)

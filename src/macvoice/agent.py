@@ -269,7 +269,11 @@ class VoiceAgent:
         # the ASR model: every spoken turn and answer is transcribed there, in
         # order, while the worker replies. So "stop" is heard while the
         # agent works, and anything else is queued as the next turn.
-        self._heard: queue.Queue[tuple[str, TurnEvent, float] | None] = queue.Queue()
+        self._heard: queue.Queue[tuple[str, TurnEvent, float, int | None] | None] = queue.Queue()
+        # Which reply a heard turn was spoken over (when it started), so a
+        # late "stop" can't cancel the reply after it.
+        self._turn_no = 0
+        self._spoken_over: int | None = None
         self._hearing = 0  # turns in _heard or being transcribed
         self._hearing_lock = threading.Lock()
         self._worker = threading.Thread(target=self._work, name="macvoice-responder", daemon=True)
@@ -332,10 +336,12 @@ class VoiceAgent:
             self._voiced_run = 0
             self.interruptions += 1
             self._hush_reply()
+        if event is not None and event.kind == "start":
+            self._spoken_over = self._turn_no if self._replying.is_set() else None
         if event is not None and event.kind == "end":
             with self._hearing_lock:
                 self._hearing += 1
-            self._heard.put(("turn", event, now))
+            self._heard.put(("turn", event, now, self._spoken_over))
         return event
 
     def _hush_reply(self) -> None:
@@ -385,7 +391,7 @@ class VoiceAgent:
         the reply) or the next turn, queued; any other turn goes straight
         to the worker."""
         while (item := self._heard.get()) is not None:
-            kind, event, fired = item
+            kind, event, fired, spoken_over = item
             if kind == "answer":
                 try:
                     self._answers.put(("text", self.responder.transcribe(event.audio)[0]))
@@ -396,9 +402,14 @@ class VoiceAgent:
                 text, asr_ms = self.responder.transcribe(event.audio)
                 if not text or not any(ch.isalnum() for ch in text):
                     continue
-                if self._replying.is_set() and is_stop(text):
-                    self.on_note(f"  you : {text}  -> stopping the agent")
-                    self._stop_reply()
+                if is_stop(text) and spoken_over is not None:
+                    # Only the reply it was said over; if that's finished,
+                    # there's nothing to stop (and the next one is left alone).
+                    if self._replying.is_set() and self._turn_no == spoken_over:
+                        self.on_note(f"  you : {text}  -> stopping the agent")
+                        self._stop_reply()
+                    else:
+                        self.on_note(f"  you : {text}  -> it had already finished")
                     continue
                 if self._replying.is_set():
                     self.on_note(f'  queued: "{text}" (sends when the agent finishes)')
@@ -412,8 +423,12 @@ class VoiceAgent:
     def _work(self) -> None:
         while (item := self._turns.get()) is not None:
             event, fired = item
+            # Per turn: a new turn isn't hushed or cancelled, and gets its own
+            # grace period before talking over it counts.
             self._cancel = threading.Event()
             self._hush = threading.Event()
+            self._speaking_since = None
+            self._turn_no += 1
             self._audible = False
             self._thinking_since = time.monotonic()
             self._replying.set()
@@ -460,7 +475,7 @@ class VoiceAgent:
             return None
         event = self.endpointer.push(chunk, self.vad(chunk))
         if event is not None and event.kind == "end":
-            self._heard.put(("answer", event, now))
+            self._heard.put(("answer", event, now, None))
         return event
 
     def ask(self, spoken: str, printed: str = "", retry: str = "Sorry, was that a yes or a no?") -> str | None:
