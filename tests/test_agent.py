@@ -767,3 +767,20 @@ def test_markdown_is_shown_but_not_read_aloud():
     m = Responder(FakeASR(), MarkdownLLM(), tts).respond_text("fix it", CollectingOut())
     assert tts.spoken == ["I fixed two bugs in app.py.", "Run the tests."]
     assert "```python" in m.text and "**two**" in m.text      # the screen gets the original
+
+
+def test_a_failing_chunk_does_not_stop_the_listening(caplog):
+    import queue as q
+    agent = VoiceAgent.__new__(VoiceAgent)
+    calls = []
+
+    def feed(chunk):
+        calls.append(chunk)
+        raise TypeError("boom")
+    agent.feed = feed
+    chunks = q.Queue()
+    chunks.put("a")
+    chunks.put("b")
+    agent._feed_from(chunks)
+    agent._feed_from(chunks)
+    assert calls == ["a", "b"] and "still listening" in caplog.text

@@ -241,6 +241,7 @@ class VoiceAgent:
         self.barge_in_grace_s = barge_in_grace_s
         self._voiced_run = 0
         self._speaking_since: float | None = None
+        self._grace_turn = 0             # the turn _speaking_since belongs to
         self.on_turn = on_turn
         self._turns: queue.Queue[tuple[_Heard | str, float] | None] = queue.Queue()  # transcribed or typed
         self._cancel = threading.Event()   # stop the brain's turn (Ctrl-C, "stop")
@@ -314,8 +315,11 @@ class VoiceAgent:
         if speaking:
             # Output that isn't the thinking tone means the reply has spoken.
             self._audible = self._audible or (self.out.busy and not self._toned)
-            if self._speaking_since is None:
-                self._speaking_since = now
+            # The grace period restarts with each turn. Only this (mic)
+            # thread touches the timer; it sees a new turn by its number.
+            turn = self._turn_no
+            if self._speaking_since is None or self._grace_turn != turn:
+                self._speaking_since, self._grace_turn = now, turn
             self._muted_until = now + self.echo_guard_s
             if not self.barge_in:
                 return None
@@ -328,7 +332,8 @@ class VoiceAgent:
         speech = prob >= self.endpointer.cfg.speech_prob
         # Once per reply: talking on over a reply already hushed isn't
         # another interruption.
-        settled = (speaking and now - self._speaking_since >= self.barge_in_grace_s
+        since = self._speaking_since
+        settled = (speaking and since is not None and now - since >= self.barge_in_grace_s
                    and not self._cancel.is_set() and not self._hush.is_set())
         self._voiced_run = self._voiced_run + 1 if speech and settled else 0
         if self._voiced_run >= self._barge_in_n:
@@ -427,7 +432,6 @@ class VoiceAgent:
             # grace period before talking over it counts.
             self._cancel = threading.Event()
             self._hush = threading.Event()
-            self._speaking_since = None
             self._turn_no += 1
             self._audible = False
             self._thinking_since = time.monotonic()
@@ -559,6 +563,8 @@ class VoiceAgent:
             self.feed(chunks.get(timeout=0.5))
         except queue.Empty:
             pass
+        except Exception:  # noqa: BLE001 - one bad chunk must not leave it deaf
+            log.exception("hearing failed on one chunk; still listening")
 
     def listen(self, mic: "Mic") -> threading.Thread:  # pragma: no cover - devices
         """Feed the microphone on a background thread until :meth:`close`,
