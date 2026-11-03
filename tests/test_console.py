@@ -192,7 +192,7 @@ def test_turns_render_markdown(pipe, capsys):
                     reply="I fixed two bugs: one two", llm_first_sentence_ms=900, tts_first_audio_ms=5)
     c.print_turn(m)
     out = capsys.readouterr().out
-    assert "you : what changed" in out
+    assert "you :" not in out                                    # printed when it was heard
     assert "two" in out and "**" not in out and "•" in out      # rendered, not raw
     assert "llm 900 ms" in out
 

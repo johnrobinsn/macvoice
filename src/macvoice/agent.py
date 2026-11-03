@@ -416,8 +416,11 @@ class VoiceAgent:
                     else:
                         self.on_note(f"  you : {text}  -> it had already finished")
                     continue
+                # What it heard, on screen before the agent gets it.
                 if self._replying.is_set():
                     self.on_note(f'  queued: "{text}" (sends when the agent finishes)')
+                else:
+                    self.on_note(f"  you : {text}")
                 self._turns.put((_Heard(event, text, asr_ms), fired))
             except Exception:
                 log.exception("couldn't transcribe a turn")

@@ -258,8 +258,7 @@ class Console:
 
         from macvoice.status import timing
 
-        if not m.typed:
-            print(f"\033[2m  you : {m.transcript}\033[0m")
+        # What you said was printed when it was heard (VoiceAgent.on_note).
         text = m.text or m.reply
         if text:
             # Created per call: under patch_stdout, sys.stdout is a proxy.

@@ -85,10 +85,12 @@ def _build(args, need_tts: bool = True):
     return vad, endpointer, responder
 
 
-def _print_turn(m, emit=print) -> None:
+def _print_turn(m, emit=print, heard=True) -> None:
+    """A turn's summary. ``heard=False`` when the live agent already
+    printed what you said, as soon as it was transcribed."""
     from macvoice.status import timing
 
-    lines = ["", f"  you : {m.transcript}"]
+    lines = ["", f"  you : {m.transcript}"] if heard else []
     if m.reply:
         lines.append(f"  bot : {m.reply}")
     lines.append("        " + timing(m))
@@ -164,7 +166,7 @@ def cmd_run(args) -> None:
     # -v logs to the same terminal, which would tear the live line.
     status = StatusLine(lambda: (agent.state, agent.level_db), barge_in=barge_in,
                         enabled=False if args.no_status or args.verbose else None)
-    agent.on_turn = lambda m: _print_turn(m, status.print)
+    agent.on_turn = lambda m: _print_turn(m, status.print, heard=False)
     agent.on_note = status.print
     if isinstance(brain, ACPAgent) and brain.permissions == "ask":
         brain.ask = lambda request: agent.ask(request.spoken(), request.printed())

@@ -784,3 +784,23 @@ def test_a_failing_chunk_does_not_stop_the_listening(caplog):
     agent._feed_from(chunks)
     agent._feed_from(chunks)
     assert calls == ["a", "b"] and "still listening" in caplog.text
+
+
+def test_what_you_said_is_shown_before_the_reply():
+    notes, events = [], []
+    llm = SpacedLLM()
+    real_reply = llm.reply
+
+    def reply(history):
+        events.append(("llm", list(notes)))
+        yield from real_reply(history)
+    llm.reply = reply
+    done = threading.Event()
+    agent = VoiceAgent(energy_vad, Endpointer(None, EndpointConfig(max_silence_ms=300)),
+                       Responder(FakeASR(), llm, FakeTTS()), FakeOut(), echo_guard_s=0.3,
+                       on_note=notes.append, on_turn=lambda m: done.set())
+    t = speak(agent, 1.0, 0.0)
+    speak(agent, 0.5, t, loud=False)
+    assert done.wait(2)
+    assert events == [("llm", ["  you : what time is it"])]   # on screen before the agent got it
+    agent.close()
