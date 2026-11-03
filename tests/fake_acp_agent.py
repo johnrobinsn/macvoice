@@ -2,7 +2,8 @@
 claude-agent-acp. Prompts containing "tool" ask permission first and report
 the outcome; "slow" streams forever until session/cancel; "freeze" sends nothing until
 session/cancel; "edit" reports tool calls; "die" exits. It
-advertises three modes unless started with "nomodes"."""
+advertises three modes unless started with "nomodes", and model and effort
+settings (configOptions, as claude-agent-acp does) unless "noconfig"."""
 
 import json
 import sys
@@ -13,6 +14,14 @@ MODES = None if "nomodes" in sys.argv else {
     "availableModes": [{"id": "default", "name": "Default"},
                        {"id": "acceptEdits", "name": "Accept Edits", "description": "edits go through"},
                        {"id": "plan", "name": "Plan Mode"}]}
+
+CONFIG = None if "noconfig" in sys.argv else [
+    {"id": "model", "name": "Model", "category": "model", "type": "select", "currentValue": "default",
+     "options": [{"value": "default", "name": "Default (recommended)"},
+                 {"value": "opus", "name": "Opus 5.5"}, {"value": "sonnet", "name": "Sonnet 5.5"}]},
+    {"id": "effort", "name": "Effort", "category": "thought_level", "type": "select",
+     "currentValue": "default",
+     "options": [{"value": v, "name": v.title()} for v in ("default", "low", "medium", "high")]}]
 
 
 def send(msg):
@@ -42,9 +51,17 @@ while (msg := read()) is not None:
     if method == "initialize":
         send({"id": mid, "result": {"protocolVersion": 1, "agentInfo": {"name": "fake"}}})
     elif method == "session/new":
-        send({"id": mid, "result": {"sessionId": "s1", **({"modes": MODES} if MODES else {})}})
+        send({"id": mid, "result": {"sessionId": "s1", **({"modes": MODES} if MODES else {}),
+                                    **({"configOptions": CONFIG} if CONFIG else {})}})
     elif method == "session/set_mode":
         send({"id": mid, "result": {}})
+    elif method == "session/set_config_option":
+        option = next((o for o in CONFIG or [] if o["id"] == params["configId"]), None)
+        if option is None or params["value"] not in [c["value"] for c in option["options"]]:
+            send({"id": mid, "error": {"code": -32603, "message": "Internal error"}})
+        else:
+            option["currentValue"] = params["value"]
+            send({"id": mid, "result": {"configOptions": CONFIG}})
     elif method == "session/prompt":
         text = params["prompt"][0]["text"]
         sid = params["sessionId"]

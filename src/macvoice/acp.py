@@ -17,7 +17,10 @@ When the agent asks permission to run a tool, ``permissions`` decides:
 unattended), "allow" (approve each request once), or "ask" (hand the
 request to the ``ask`` callback, which asks the user out loud; see
 :meth:`macvoice.agent.VoiceAgent.ask`). Modes ("default", "plan", ...) are
-whatever the agent advertises in ``session/new``. Standard library only.
+whatever the agent advertises in ``session/new``, and so are its settings
+(``configOptions``): the model and the reasoning effort are picked by
+category, so the same flags work for any agent that offers them. Standard
+library only.
 """
 
 from __future__ import annotations
@@ -48,6 +51,10 @@ CODING_BRIEF = (
 )
 
 PERMISSIONS = ("deny", "allow", "ask")
+
+# Settings found by their ACP category, not the agent's own option id.
+# Claude Code: "model" (opus, sonnet, ...) and "effort" (low ... max).
+SETTINGS = {"model": "model", "effort": "thought_level"}
 
 # The answers an ``ask`` callback returns; anything else declines.
 ALLOW, ALWAYS, REJECT = "allow", "always", "reject"
@@ -127,7 +134,8 @@ class ACPAgent:
     def __init__(self, command: list[str] | None = None, cwd: str | None = None,
                  allow_tools: bool = False, timeout: float = 300.0,
                  env: dict[str, str] | None = None, permissions: str | None = None,
-                 mode: str | None = None,
+                 mode: str | None = None, model: str | None = None,
+                 effort: str | None = None,
                  ask: Callable[[PermissionRequest], str | None] | None = None,
                  coding: bool | None = None) -> None:
         self.command = command or ["claude-agent-acp"]
@@ -164,8 +172,13 @@ class ACPAgent:
         modes = session.get("modes") or {}
         self.modes: list[dict] = list(modes.get("availableModes") or [])
         self.mode: str | None = modes.get("currentModeId")
+        self.config_options: list[dict] = list(session.get("configOptions") or [])
         if mode is not None:
             self.set_mode(mode)
+        if model is not None:
+            self.set_setting("model", model)
+        if effort is not None:
+            self.set_setting("effort", effort)
         self._first_turn = True
 
     def set_mode(self, wanted: str) -> str:
@@ -182,6 +195,37 @@ class ACPAgent:
         self._call("session/set_mode", {"sessionId": self.session_id, "modeId": match["id"]})
         self.mode = match["id"]
         return self.mode
+
+    def setting(self, name: str) -> dict | None:
+        """The agent's option for ``name`` ("model" or "effort"), or None
+        if it doesn't offer one."""
+        category = SETTINGS[name]
+        return next((o for o in self.config_options if o.get("category") == category), None)
+
+    def current(self, name: str) -> str | None:
+        option = self.setting(name)
+        return None if option is None else option.get("currentValue")
+
+    def set_setting(self, name: str, wanted: str) -> str:
+        """Change the model or effort, by value or name (case-insensitive).
+        Raises :class:`ACPError` naming the choices."""
+        option = self.setting(name)
+        if option is None:
+            raise ACPError(f"{self.name} doesn't offer a setting for {name}")
+        key = wanted.strip().lower()
+        choices = option.get("options") or []
+        match = next((c for c in choices if str(c.get("value", "")).lower() == key
+                      or str(c.get("name", "")).lower() == key), None)
+        if match is None:
+            raise ACPError(f"{self.name} has no {name} {wanted!r}. Available: "
+                           + ", ".join(str(c.get("value")) for c in choices))
+        result = self._call("session/set_config_option", {
+            "sessionId": self.session_id, "configId": option["id"], "value": match["value"]})
+        if result.get("configOptions"):
+            self.config_options = list(result["configOptions"])
+        else:
+            option["currentValue"] = match["value"]
+        return match["value"]
 
     # ── transport ─────────────────────────────────────────────────────
 
@@ -283,6 +327,8 @@ class ACPAgent:
                         yield content["text"]
                 elif kind in ("tool_call", "tool_call_update"):
                     self._report_tool(update)
+                elif kind == "config_option_update" and update.get("configOptions"):
+                    self.config_options = list(update["configOptions"])
         finally:
             self._prompt_req = None
             if not done and self._proc.poll() is None:  # barge-in: stop the agent's turn

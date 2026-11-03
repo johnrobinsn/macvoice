@@ -37,6 +37,17 @@ class FakeAgent:
 class FakeBrain:
     modes = [{"id": "default", "description": "ask first"}, {"id": "plan", "description": "plan only"}]
     mode = "default"
+    effort = {"currentValue": "default", "options": [{"value": "default", "name": "Default"},
+                                                     {"value": "low", "name": "Low"}]}
+
+    def setting(self, name):
+        return self.effort if name == "effort" else None
+
+    def set_setting(self, name, value):
+        if value not in ("default", "low"):
+            raise RuntimeError(f"no {name} {value!r}. Available: default, low")
+        self.effort["currentValue"] = value
+        return value
 
     def set_mode(self, name):
         if name not in ("default", "plan"):
@@ -144,6 +155,24 @@ def test_commands(pipe, capsys):
     assert c.handle("/quit") is False
 
 
+def test_model_and_effort_commands(pipe, capsys):
+    agent, brain = FakeAgent(), FakeBrain()
+    c = console(pipe, agent, brain=brain)
+    c.handle("/effort")
+    assert "* default  Default" in capsys.readouterr().out
+    c.handle("/effort low")
+    c.handle("/effort max")
+    out = capsys.readouterr().out
+    assert "effort: low" in out and "no effort 'max'" in out and brain.effort["currentValue"] == "low"
+    agent.busy = True
+    c.handle("/effort default")
+    assert "wait for the reply" in capsys.readouterr().out and brain.effort["currentValue"] == "low"
+    c.handle("/model")
+    assert "no model setting" in capsys.readouterr().out
+    console(pipe).handle("/effort")
+    assert "no effort setting" in capsys.readouterr().out
+
+
 def test_no_modes_without_an_acp_brain(pipe, capsys):
     console(pipe).handle("/modes")
     assert "no modes" in capsys.readouterr().out
@@ -153,7 +182,7 @@ def test_slash_commands_complete(pipe):
     from prompt_toolkit.document import Document
     c = console(pipe)
     names = [x.text for x in c.session.completer.get_completions(Document("/mo"), None)]
-    assert names == ["/modes", "/mode"]
+    assert names == ["/modes", "/mode", "/model"]
     assert list(c.session.completer.get_completions(Document("hello /mo"), None)) == []
 
 

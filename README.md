@@ -61,7 +61,7 @@ It goes `listening` → `hearing you` → `thinking` → `speaking`, plus `allow
 | Esc | stop the reply and cancel the agent's turn |
 | y / n / a | answer a permission question (when the line is empty) |
 
-Commands: `/mute` (replies as text only), `/modes` and `/mode NAME` (an ACP agent's modes), `/help`, `/quit`. Shift+Enter works in terminals that support the kitty keyboard protocol (Ghostty, kitty, WezTerm, iTerm2); in Terminal.app use Option+Enter (with "Use Option as Meta key" on) or Ctrl+J. `--no-console` goes back to voice only.
+Commands: `/mute` (replies as text only), `/modes` and `/mode NAME` (an ACP agent's modes), `/model [NAME]` and `/effort [LEVEL]` (its model and reasoning effort), `/help`, `/quit`. Shift+Enter works in terminals that support the kitty keyboard protocol (Ghostty, kitty, WezTerm, iTerm2); in Terminal.app use Option+Enter (with "Use Option as Meta key" on) or Ctrl+J. `--no-console` goes back to voice only.
 
 At startup it prints which brain it's using. By default that's the LLM server on `localhost:8080` if one is running; otherwise an "echo" brain that repeats what you say, so you can try the audio loop with no LLM at all.
 
@@ -110,12 +110,13 @@ Give the agent a project folder and it can read, edit and run things there. It t
 ```bash
 uv run macvoice run --llm acp --cwd ~/demo-site                     # the folder is created if needed
 uv run macvoice run --llm acp --cwd ~/demo-site --mode acceptEdits  # edits go through; commands still ask
-uv run macvoice modes                                               # the agent's modes, for --mode
+uv run macvoice run --llm acp --cwd ~/demo-site --model sonnet --effort low  # a lighter model, less thinking
+uv run macvoice modes                                               # the agent's modes, models and effort levels
 ```
 
 When the agent wants to run a tool, it asks out loud ("Claude wants to create the site folder. Allow?") and prints the exact command. Say yes or no, or press `y`, `n` or `a` (allow always). Anything unclear gets asked once more, then declined, and so does silence for 20 seconds. Nothing heard while the question is playing counts as an answer.
 
-`--permissions allow` approves every request without asking, and `--permissions deny` declines them all. `--mode` takes any mode the agent advertises, by id or name, so it works with any ACP agent. While a slow reply hasn't started, a soft tone plays once a second so you know it's working (`--no-thinking-tone` turns it off).
+`--permissions allow` approves every request without asking, and `--permissions deny` declines them all. `--mode` takes any mode the agent advertises, by id or name, so it works with any ACP agent. `--model` and `--effort` work the same way for agents that offer those settings (Claude Code: `opus`, `sonnet`, `haiku`, ... and `low` to `max`). While a slow reply hasn't started, a soft tone plays once a second so you know it's working (`--no-thinking-tone` turns it off).
 
 **Talking over it stops the voice, not the agent.** When you talk over a reply, or while the agent is still working, it goes quiet for the rest of that turn but keeps working. The whole reply still lands on screen, and what you said goes to the agent as the next prompt once the turn ends (it prints `queued: ...`). If nothing is queued, two soft blips tell you when the agent is free again. To actually cancel the agent's turn, say just "stop" (or "cancel", "stop that"), or press Ctrl+C or Esc. Permission questions are always spoken, even after you've talked over the reply.
 
@@ -138,7 +139,7 @@ uv run macvoice transcribe a.wav b.wav                 # Parakeet only
 uv run macvoice say "Hello there" [-o hello.wav]       # Phonon only
 uv run macvoice run --voice Harper                     # a Phonon catalog voice
 uv run macvoice run --turns 3                          # exit after three replies (voice only)
-uv run macvoice modes [--acp-command "..."]            # an ACP agent's modes, for --mode
+uv run macvoice modes [--acp-command "..."]            # an ACP agent's modes, models and effort levels
 ```
 
 Each turn prints where the time went:

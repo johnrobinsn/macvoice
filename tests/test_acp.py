@@ -192,6 +192,58 @@ def test_mode_on_an_agent_without_modes(agent_log, tmp_path):
                  mode="plan")
 
 
+# ── model and effort (configOptions) ──────────────────────────────────
+
+def test_settings_are_read_from_the_session(agent_log, tmp_path):
+    agent = make(agent_log, tmp_path)
+    assert agent.current("model") == "default" and agent.current("effort") == "default"
+    assert not any(m.get("method") == "session/set_config_option" for m in logged(agent_log))
+    agent.close()
+
+
+@pytest.mark.parametrize("model", ["sonnet", "SONNET", "Sonnet 5.5"])
+def test_model_and_effort_by_value_or_name(agent_log, tmp_path, model):
+    agent = make(agent_log, tmp_path, model=model, effort="Low")
+    assert agent.current("model") == "sonnet" and agent.current("effort") == "low"
+    sets = [m["params"] for m in logged(agent_log) if m.get("method") == "session/set_config_option"]
+    assert sets == [{"sessionId": "s1", "configId": "model", "value": "sonnet"},
+                    {"sessionId": "s1", "configId": "effort", "value": "low"}]
+    agent.close()
+
+
+def test_unknown_model_lists_the_choices(agent_log, tmp_path):
+    with pytest.raises(ACPError, match="no model 'gpt'. Available: default, opus, sonnet"):
+        make(agent_log, tmp_path, model="gpt")
+
+
+def test_effort_on_an_agent_without_settings(agent_log, tmp_path):
+    with pytest.raises(ACPError, match="doesn't offer a setting for effort"):
+        ACPAgent([sys.executable, FAKE, str(agent_log), "noconfig"], cwd=str(tmp_path), timeout=10,
+                 effort="low")
+
+
+def test_settings_follow_the_agent(agent_log, tmp_path):
+    agent = make(agent_log, tmp_path)
+    agent.set_setting("effort", "high")
+    assert agent.current("effort") == "high"
+    agent.close()
+
+
+def test_load_passes_model_and_effort_to_the_agent(agent_log, tmp_path, monkeypatch):
+    from macvoice import llm
+    monkeypatch.setenv("HOME", str(tmp_path))
+    agent, about = llm.load("acp", model="opus", effort="medium",
+                            acp_command=f"{sys.executable} {FAKE} {agent_log}")
+    assert "model: opus, effort: medium" in about
+    agent.close()
+
+
+def test_effort_needs_an_acp_agent():
+    from macvoice import llm
+    with pytest.raises(ValueError, match="--effort needs --llm acp"):
+        llm.load("server", effort="low")
+
+
 # ── llm.load ──────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("kw, policy", [({}, "deny"), ({"cwd": "proj"}, "ask"),
@@ -215,6 +267,8 @@ def test_modes_command(agent_log, tmp_path, capsys):
     cli.main(["modes", "--acp-command", f"{sys.executable} {FAKE} {agent_log}", "--cwd", str(tmp_path)])
     out = capsys.readouterr().out
     assert "* default" in out and "acceptEdits  (Accept Edits)  edits go through" in out
+    assert "model (use with --model):" in out and "   sonnet  (Sonnet 5.5)" in out
+    assert "effort (use with --effort):" in out and "   low  (Low)" in out
 
 
 # ── console support: cancel from another thread, tool activity ───────

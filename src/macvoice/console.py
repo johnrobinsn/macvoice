@@ -42,6 +42,8 @@ COMMANDS = {
     "/mute": "replies as text only (again to speak)",
     "/modes": "the agent's modes",
     "/mode": "switch mode: /mode acceptEdits",
+    "/model": "the agent's models, or switch: /model sonnet",
+    "/effort": "how hard it thinks, or switch: /effort low",
     "/quit": "leave",
 }
 
@@ -224,9 +226,28 @@ class Console:
                     print(f"  mode: {self.brain.set_mode(arg)}")
                 except Exception as e:  # noqa: BLE001 - ACPError names the choices
                     print(f"  {e}")
+        elif name in ("/model", "/effort"):
+            self._setting(name[1:], arg)
         else:
             print(f"  unknown command {name} (/help)")
         return True
+
+    def _setting(self, name: str, arg: str) -> None:
+        option = self.brain.setting(name) if hasattr(self.brain, "setting") else None
+        if option is None:
+            print(f"  this brain has no {name} setting")
+        elif not arg:
+            for c in option.get("options") or []:
+                mark = "*" if c.get("value") == option.get("currentValue") else " "
+                label = c.get("name") if c.get("name") != c.get("value") else ""
+                print(f"  {mark} {c.get('value')}  {label}".rstrip())
+        elif self.agent.busy:
+            print(f"  wait for the reply to finish, then switch {name}")
+        else:
+            try:
+                print(f"  {name}: {self.brain.set_setting(name, arg)}")
+            except Exception as e:  # noqa: BLE001 - ACPError names the choices
+                print(f"  {e}")
 
     # ── output ────────────────────────────────────────────────────────
 

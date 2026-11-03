@@ -24,7 +24,9 @@ def _add_model_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--base-url", default=None, help="OpenAI-compatible base URL: a local server "
                    "(mlx_lm.server, Ollama, LM Studio, llama.cpp) or a hosted API "
                    "(default http://localhost:8080/v1)")
-    p.add_argument("--model", default=None)
+    p.add_argument("--model", default=None,
+                   help="the model: on the server (--llm server), or one of the agent's own with "
+                        "--llm acp (see `macvoice modes`), e.g. sonnet for Claude Code")
     p.add_argument("--api-key", default=None)
     p.add_argument("--acp-command", default=None,
                    help='ACP agent command line, e.g. "gemini --experimental-acp" (default claude-agent-acp)')
@@ -39,6 +41,9 @@ def _add_model_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--mode", default=None,
                    help="with --llm acp: one of the agent's own modes, by id or name "
                         "(see `macvoice modes`), e.g. acceptEdits for Claude Code")
+    p.add_argument("--effort", default=None,
+                   help="with --llm acp: how hard the agent thinks, if it offers the setting "
+                        "(Claude Code: low, medium, high, xhigh, max). Lower answers sooner")
     p.add_argument("--no-turn-detector", action="store_true",
                    help="end turns on silence alone (--max-silence-ms)")
     p.add_argument("--max-silence-ms", type=float, default=None,
@@ -70,8 +75,8 @@ def _build(args, need_tts: bool = True):
     try:
         brain, about = llm.load(args.llm, args.base_url, args.model, args.api_key,
                                 args.acp_command, args.allow_tools, cwd=args.cwd,
-                                permissions=args.permissions, mode=args.mode)
-    except RuntimeError as e:
+                                permissions=args.permissions, mode=args.mode, effort=args.effort)
+    except (RuntimeError, ValueError) as e:
         sys.exit(f"macvoice: {e}")
     print(f"brain: {about}", flush=True)
     responder = Responder(asr.load(args.asr, args.precision), brain,
@@ -209,14 +214,26 @@ def cmd_modes(args) -> None:
     except (OSError, ACPError) as e:
         sys.exit(f"macvoice: couldn't start the ACP agent ({e})")
     try:
+        name = " ".join(agent.command)
         if not agent.modes:
-            print(f"{' '.join(agent.command)} doesn't advertise any modes")
-            return
-        print(f"modes of {' '.join(agent.command)} (use with --mode):")
-        for m in agent.modes:
-            mark = "*" if m.get("id") == agent.mode else " "
-            desc = f"  {m['description']}" if m.get("description") else ""
-            print(f" {mark} {m.get('id')}  ({m.get('name', m.get('id'))}){desc}")
+            print(f"{name} doesn't advertise any modes")
+        else:
+            print(f"modes of {name} (use with --mode):")
+            for m in agent.modes:
+                mark = "*" if m.get("id") == agent.mode else " "
+                desc = f"  {m['description']}" if m.get("description") else ""
+                print(f" {mark} {m.get('id')}  ({m.get('name', m.get('id'))}){desc}")
+        for setting in ("model", "effort"):
+            option = agent.setting(setting)
+            if option is None:
+                continue
+            print(f"\n{setting} (use with --{setting}):")
+            for c in option.get("options") or []:
+                mark = "*" if c.get("value") == option.get("currentValue") else " "
+                label = str(c.get("name") or "")
+                desc = f"  {c['description']}" if c.get("description") else ""
+                print(f" {mark} {c.get('value')}" + (f"  ({label})" if label and label != c.get("value") else "")
+                      + desc)
     finally:
         agent.close()
 
@@ -304,7 +321,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="voice only: no input box for typing prompts")
     p.set_defaults(fn=cmd_run)
 
-    p = sub.add_parser("modes", help="list an ACP agent's modes (for --mode)")
+    p = sub.add_parser("modes", help="list an ACP agent's modes, models and effort levels "
+                                     "(for --mode, --model and --effort)")
     p.add_argument("--acp-command", default=None,
                    help='ACP agent command line (default claude-agent-acp)')
     p.add_argument("--cwd", default=None, help="folder to start the agent in")
