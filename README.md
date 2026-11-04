@@ -110,7 +110,7 @@ Give the agent a project folder and it can read, edit and run things there. It t
 ```bash
 uv run macvoice run --llm acp --cwd ~/demo-site                     # the folder is created if needed
 uv run macvoice run --llm acp --cwd ~/demo-site --mode acceptEdits  # edits go through; commands still ask
-uv run macvoice run --llm acp --cwd ~/demo-site --model sonnet --effort low  # a lighter model, less thinking
+uv run macvoice run --llm acp --cwd ~/demo-site --model sonnet --effort low  # the agent's own model and effort settings
 uv run macvoice modes                                               # the agent's modes, models and effort levels
 ```
 
@@ -118,7 +118,7 @@ When the agent wants to run a tool, it asks out loud ("Claude wants to create th
 
 `--permissions allow` approves every request without asking, and `--permissions deny` declines them all. `--mode` takes any mode the agent advertises, by id or name, so it works with any ACP agent. `--model` and `--effort` work the same way for agents that offer those settings (Claude Code: `opus`, `sonnet`, `haiku`, ... and `low` to `max`). While a slow reply hasn't started, a soft tone plays once a second so you know it's working (`--no-thinking-tone` turns it off).
 
-**Talking over it stops the voice, not the agent.** When you talk over a reply, or while the agent is still working, it goes quiet for the rest of that turn but keeps working. The whole reply still lands on screen, and what you said goes to the agent as the next prompt once the turn ends (it prints `queued: ...`). If nothing is queued, two soft blips tell you when the agent is free again. To actually cancel the agent's turn, say just "stop" (or "cancel", "stop that"), or press Ctrl+C or Esc. Permission questions are always spoken, even after you've talked over the reply.
+**Talking over it stops the voice, not the agent.** When you talk over a reply, or while the agent is still working, it goes quiet for the rest of that turn but keeps working. The whole reply still lands on screen, and what you said goes to the agent as the next prompt once the turn ends (it prints `queued: ...`). If nothing is queued, two soft blips tell you when the agent is free again (`--no-thinking-tone` turns these off too). To actually cancel the agent's turn, say just "stop" (or "cancel", "stop that"), or press Ctrl+C or Esc. Permission questions are always spoken, even after you've talked over the reply.
 
 Caveats:
 
