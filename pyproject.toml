@@ -21,12 +21,22 @@ dependencies = [
 [project.optional-dependencies]
 # The "before" stack the article compares against: Whisper large-v3 on
 # PyTorch-MPS (with distil-large-v3 speculative decoding) and Kokoro.
+# NOTE: ``transformers`` has no <5 cap. uv locks every optional extra into a
+# single solution, and the ``chatterbox`` extra's mlx-audio requires
+# transformers>=5.14, so this pin must allow 5.x or the two extras cannot
+# resolve together. If Kokoro ever breaks under transformers 5.x, that is why.
 baseline = [
     "torch>=2.4",
-    "transformers>=4.45,<5",
+    "transformers>=4.45",
     "kokoro>=0.9",
     # misaki (Kokoro's G2P) needs this spaCy model and otherwise tries to pip-install it.
     "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
+]
+# Chatterbox Turbo voice cloning on MLX (Apple Silicon). Adds MLX/MLX-Audio;
+# the Chatterbox weights (~1 GB) are fetched from the Hugging Face cache on
+# first use, the same way Kokoro downloads through its own library.
+chatterbox = [
+    "mlx-audio>=0.5.6; sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
 
 [project.scripts]

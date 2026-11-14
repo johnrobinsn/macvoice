@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 import time
 
@@ -11,12 +12,21 @@ import numpy as np
 
 from macvoice import SAMPLE_RATE
 
+# Default directory of reference .wav clips for chatterbox voice cloning.
+# Set MACVOICE_VOICES_PATH in the environment (or a sourced .env) to avoid --voices.
+DEFAULT_VOICES = os.environ.get("MACVOICE_VOICES_PATH")
+
 
 def _add_model_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--asr", default="parakeet", choices=["parakeet", "whisper"])
     p.add_argument("--precision", default="q8", help="Parakeet precision: bf16 fp16 q8 q6 q4")
-    p.add_argument("--tts", default="phonon", choices=["phonon", "kokoro"])
-    p.add_argument("--voice", default=None, help="TTS voice (Phonon catalog name, e.g. Harper)")
+    p.add_argument("--tts", default="phonon", choices=["phonon", "kokoro", "chatterbox"])
+    p.add_argument("--voice", default=None,
+                   help="TTS voice: Phonon catalog name (e.g. Harper), or a reference-clip "
+                        "name for chatterbox (a .wav in --voices)")
+    p.add_argument("--voices", default=DEFAULT_VOICES,
+                   help="chatterbox: directory of reference .wav clips to clone from "
+                        "(default: $MACVOICE_VOICES_PATH)")
     p.add_argument("--llm", default=None, choices=["server", "echo", "acp", "openai"],
                    help="server: an OpenAI-compatible endpoint (--base-url); echo: repeat what you "
                         "said; acp: a coding agent over ACP (default command claude-agent-acp). "
@@ -80,7 +90,7 @@ def _build(args, need_tts: bool = True):
         sys.exit(f"macvoice: {e}")
     print(f"brain: {about}", flush=True)
     responder = Responder(asr.load(args.asr, args.precision), brain,
-                          tts.load(args.tts, args.voice) if need_tts else None)
+                          tts.load(args.tts, args.voice, voices=args.voices) if need_tts else None)
     logging.getLogger("macvoice").info("models loaded in %.1f s", time.perf_counter() - t0)
     return vad, endpointer, responder
 
@@ -280,7 +290,7 @@ def cmd_say(args) -> None:
 
     if args.tts == "phonon":
         models.ensure(models.phonon())
-    engine = tts.load(args.tts, args.voice)
+    engine = tts.load(args.tts, args.voice, voices=args.voices)
     t0 = time.perf_counter()
     first = None
     chunks = []
@@ -334,7 +344,7 @@ def build_parser() -> argparse.ArgumentParser:
                                         "so run starts listening right away")
     p.add_argument("--asr", default="parakeet", choices=["parakeet", "whisper"])
     p.add_argument("--precision", default="q8", help="Parakeet precision: bf16 fp16 q8 q6 q4")
-    p.add_argument("--tts", default="phonon", choices=["phonon", "kokoro"])
+    p.add_argument("--tts", default="phonon", choices=["phonon", "kokoro", "chatterbox"])
     p.set_defaults(fn=cmd_download)
 
     p = sub.add_parser("simulate", help="run a WAV recording through the loop, no devices")
@@ -350,8 +360,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(fn=cmd_transcribe)
 
     p = sub.add_parser("say", help="speak text (or write it to a WAV)")
-    p.add_argument("--tts", default="phonon", choices=["phonon", "kokoro"])
-    p.add_argument("--voice", default=None)
+    p.add_argument("--tts", default="phonon", choices=["phonon", "kokoro", "chatterbox"])
+    p.add_argument("--voice", default=None,
+                   help="TTS voice: Phonon name, or a reference .wav name for chatterbox")
+    p.add_argument("--voices", default=DEFAULT_VOICES,
+                   help="chatterbox: directory of reference .wav clips to clone from "
+                        "(default: $MACVOICE_VOICES_PATH)")
     p.add_argument("-o", "--out")
     p.add_argument("text")
     p.set_defaults(fn=cmd_say)
